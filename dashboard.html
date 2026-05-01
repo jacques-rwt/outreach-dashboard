@@ -1,0 +1,2217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RWT Growth — Campaign Dashboard</title>
+<!--
+================================================================
+RWT GROWTH — CAMPAIGN DASHBOARD
+================================================================
+QUICK SETUP
+  1. Set CONFIG.password below to your shared team password
+  2. Open in browser → enter password → paste HubSpot token
+  3. Adjust CONFIG.hubspot.properties to match your HubSpot field names
+
+TO CHANGE THE THEME
+  Scroll to "ACTIVE THEME" in the <style> block.
+  Swap the :root variables for any theme block listed below it.
+  Available themes: default-light, cyberpunk, minimal-grey (coming soon)
+
+COMPONENT ORDER
+  Rearrange the <section data-component="..."> blocks in <main>
+  to reorder the dashboard layout. Each section is self-contained.
+
+  Components:
+    comp-filters       — date + campaign dropdowns
+    comp-stats         — 4 top metric cards
+    comp-rates         — 4 rate cards
+    comp-charts        — daily emails + daily metrics charts
+    comp-campaigns     — live campaigns table with EKG
+    comp-prospects     — prospects table
+    comp-leads         — leads table with journey expand
+    comp-closed        — closed leads table
+================================================================
+-->
+<style>
+
+/* ============================================================
+   ACTIVE THEME — replace this :root block to change the skin
+   ============================================================ */
+:root {
+  /* Theme: default-light */
+  --bg:           #f3f4f6;
+  --surface:      #ffffff;
+  --surface-2:    #f9fafb;
+  --border:       rgba(0,0,0,0.08);
+  --border-md:    rgba(0,0,0,0.14);
+  --text:         #111827;
+  --text-2:       #4b5563;
+  --text-3:       #9ca3af;
+  --accent:       #2563eb;
+  --accent-bg:    #eff6ff;
+  --accent-text:  #1e40af;
+  --success:      #16a34a;
+  --success-bg:   #f0fdf4;
+  --warn:         #d97706;
+  --warn-bg:      #fffbeb;
+  --danger:       #dc2626;
+  --danger-bg:    #fef2f2;
+  --info:         #0891b2;
+  --info-bg:      #ecfeff;
+  --ekg-bg:       #000000;
+  --ekg-line:     #00e5ff;
+  --radius:       8px;
+  --radius-lg:    12px;
+  --font:         system-ui, -apple-system, sans-serif;
+  --font-size:    13px;
+}
+
+/*
+   OTHER THEMES (copy one of these blocks to replace :root above)
+
+   --- cyberpunk ---
+   --bg: #07071a; --surface: #0c0c24; --surface-2: #0f0f2e;
+   --border: rgba(0,229,255,0.12); --border-md: rgba(0,229,255,0.25);
+   --text: #e0e0ff; --text-2: #7070b0; --text-3: #404080;
+   --accent: #00e5ff; --accent-bg: rgba(0,229,255,0.08); --accent-text: #00e5ff;
+   --success: #00ff9f; --success-bg: rgba(0,255,159,0.08);
+   --warn: #ffe600; --warn-bg: rgba(255,230,0,0.08);
+   --danger: #ff2d78; --danger-bg: rgba(255,45,120,0.08);
+   --info: #b44fff; --info-bg: rgba(180,79,255,0.08);
+   --ekg-bg: #000; --ekg-line: #00e5ff;
+   --font: 'Courier New', monospace;
+
+   --- minimal-grey ---
+   --bg: #fafafa; --surface: #ffffff; --surface-2: #f5f5f5;
+   --border: rgba(0,0,0,0.06); --border-md: rgba(0,0,0,0.10);
+   --text: #1a1a1a; --text-2: #555555; --text-3: #aaaaaa;
+   --accent: #555555; --accent-bg: #f0f0f0; --accent-text: #222222;
+   --success: #2e7d32; --success-bg: #f1f8e9;
+   --warn: #e65100; --warn-bg: #fff3e0;
+   --danger: #b71c1c; --danger-bg: #ffebee;
+   --info: #0277bd; --info-bg: #e1f5fe;
+   --ekg-bg: #1a1a1a; --ekg-line: #aaaaaa;
+*/
+
+/* ============================================================
+   BASE
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  font-size: var(--font-size);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* ============================================================
+   PASSWORD GATE + API KEY SCREEN
+   ============================================================ */
+.gate {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+.gate-card {
+  background: var(--surface);
+  border: 0.5px solid var(--border-md);
+  border-radius: var(--radius-lg);
+  padding: 40px;
+  width: 380px;
+  text-align: center;
+}
+.gate-card h1 { font-size: 18px; font-weight: 500; margin-bottom: 6px; }
+.gate-card p { font-size: 12px; color: var(--text-2); margin-bottom: 24px; }
+.gate-card input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 0.5px solid var(--border-md);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font);
+  margin-bottom: 12px;
+  outline: none;
+}
+.gate-card input:focus { border-color: var(--accent); }
+.gate-card .btn-primary {
+  width: 100%;
+  padding: 10px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font);
+}
+.gate-card .btn-primary:hover { opacity: 0.9; }
+.gate-error { font-size: 12px; color: var(--danger); margin-top: 8px; }
+.gate-hint { font-size: 11px; color: var(--text-3); margin-top: 16px; line-height: 1.5; }
+.gate-demo-btn {
+  margin-top: 12px;
+  background: none;
+  border: 0.5px solid var(--border-md);
+  color: var(--text-2);
+  padding: 8px;
+  width: 100%;
+  border-radius: var(--radius);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: var(--font);
+}
+.gate-demo-btn:hover { background: var(--surface-2); }
+
+/* ============================================================
+   DASHBOARD WRAPPER
+   ============================================================ */
+#dashboard { display: none; }
+
+.dash-header {
+  background: var(--surface);
+  border-bottom: 0.5px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.dash-header h1 { font-size: 14px; font-weight: 500; }
+.dash-header .header-right { display: flex; align-items: center; gap: 12px; }
+.conn-status { font-size: 11px; color: var(--text-3); display: flex; align-items: center; gap: 5px; }
+.conn-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); }
+.conn-dot.live { background: var(--success); }
+
+main { max-width: 1200px; margin: 0 auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
+
+/* ============================================================
+   SHARED COMPONENT STYLES
+   ============================================================ */
+.panel {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+}
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.panel-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+.panel-title small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-3);
+  margin-left: 6px;
+}
+.panel-actions { display: flex; align-items: center; gap: 6px; }
+
+/* Metric cards */
+.metric-card {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.metric-card.accent {
+  background: var(--accent-bg);
+  border: 0.5px solid rgba(37,99,235,0.2);
+}
+.metric-label { font-size: 10px; color: var(--text-2); margin-bottom: 5px; }
+.metric-value { font-size: 22px; font-weight: 500; color: var(--text); }
+.metric-card.accent .metric-label { color: var(--accent-text); }
+.metric-card.accent .metric-value { color: var(--accent); }
+.metric-sub { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+.metric-card.accent .metric-sub { color: var(--accent-text); opacity: 0.7; }
+
+/* Grids */
+.grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* Buttons */
+.btn { font-size: 11px; padding: 4px 10px; cursor: pointer; background: transparent; color: var(--text-2); border: 0.5px solid var(--border-md); border-radius: var(--radius); font-family: var(--font); }
+.btn:hover { background: var(--surface-2); }
+.btn.active { background: var(--surface-2); color: var(--text); border-color: var(--border-md); }
+.btn-icon { display: inline-flex; align-items: center; gap: 5px; }
+.btn-tab-group { display: flex; gap: 4px; }
+
+/* Badges */
+.badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 20px; font-weight: 500; }
+.badge-green  { background: var(--success-bg); color: var(--success); }
+.badge-red    { background: var(--danger-bg);  color: var(--danger); }
+.badge-amber  { background: var(--warn-bg);    color: var(--warn); }
+.badge-grey   { background: var(--surface-2);  color: var(--text-2); }
+.badge-blue   { background: var(--info-bg);    color: var(--info); }
+.badge-accent { background: var(--accent-bg);  color: var(--accent-text); }
+.badge-stale  { background: #fff7ed; color: #c2410c; border: 0.5px solid #fed7aa; }
+
+/* ============================================================
+   HUBSPOT OUTREACH STATUS BADGES
+   Colors match HubSpot's property option colour scheme.
+   Add or rename keys here to match your actual HubSpot
+   property option values exactly (the internal API value,
+   e.g. "no_reply" not "No Reply").
+   ============================================================ */
+.hs-st { display:inline-block; font-size:10px; padding:2px 8px; border-radius:20px; font-weight:500; }
+/* positive / active */
+.hs-interested      { background:#d4edda; color:#155724; }
+.hs-prospect        { background:#cce5ff; color:#004085; }
+.hs-meeting_booked  { background:#d1ecf1; color:#0c5460; }
+.hs-connected       { background:#e2d9f3; color:#4a1d96; }
+.hs-past_engagement { background:#d1e7ff; color:#084298; }
+/* pending / neutral */
+.hs-not_now         { background:#fff3cd; color:#856404; }
+.hs-no_reply        { background:#f1f3f5; color:#495057; }
+/* closed / negative */
+.hs-not_a_fit       { background:#e2e3e5; color:#383d41; }
+.hs-not_interested  { background:#f8d7da; color:#721c24; }
+.hs-opted_out       { background:#f5c2c7; color:#842029; }
+.hs-went_cold       { background:#d6d8db; color:#1b1e21; }
+.hs-proposal_sent   { background:#d1ecf1; color:#0c5460; }
+/* fallback for any value not listed above */
+.hs-unknown         { background:#f1f3f5; color:#495057; }
+
+/* Campaign selector */
+.campaign-selector {
+  background: var(--surface);
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+.campaign-selector.collapsed {
+  padding: 12px 20px;
+}
+.campaign-selector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+.campaign-selector.collapsed .campaign-selector-header {
+  margin-bottom: 0;
+}
+.campaign-selector-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.campaign-selector-body {
+  display: block;
+}
+.campaign-selector.collapsed .campaign-selector-body {
+  display: none;
+}
+.campaign-search {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  margin-bottom: 12px;
+  outline: none;
+}
+.campaign-search:focus {
+  border-color: var(--accent);
+}
+.campaign-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  padding: 8px;
+  margin-bottom: 15px;
+}
+.campaign-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.campaign-item:hover {
+  background: var(--accent-bg);
+}
+.campaign-item input[type="checkbox"] {
+  margin-right: 10px;
+  cursor: pointer;
+}
+.campaign-item-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+}
+.campaign-item-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.campaign-selector-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.campaign-selector-actions select {
+  padding: 6px 10px;
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-apply {
+  padding: 8px 20px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.btn-apply:hover {
+  opacity: 0.9;
+}
+.btn-toggle-selector {
+  padding: 5px 12px;
+  background: transparent;
+  color: var(--text-2);
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 11px;
+  cursor: pointer;
+}
+.selected-count {
+  font-size: 12px;
+  color: var(--text-2);
+  padding: 6px 12px;
+  background: var(--accent-bg);
+  border-radius: var(--radius);
+}
+
+/* Move-to dropdown */
+.move-select {
+  font-size: 10px; padding: 3px 6px;
+  border: 0.5px solid var(--border-md);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: var(--font);
+  cursor: pointer;
+  outline: none;
+  max-width: 110px;
+}
+.move-select:hover { border-color: var(--accent); }
+.move-select:focus { border-color: var(--accent); }
+
+/* Days colouring */
+.days-ok   { color: var(--success); font-weight: 500; }
+.days-warn { color: var(--warn);    font-weight: 500; }
+.days-bad  { color: var(--danger);  font-weight: 500; }
+
+/* Search input */
+.search-input {
+  font-size: 12px; padding: 5px 10px;
+  border: 0.5px solid var(--border-md);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  width: 200px; outline: none;
+  font-family: var(--font);
+}
+.search-input:focus { border-color: var(--accent); }
+
+/* ============================================================
+   TABLES (shared)
+   ============================================================ */
+.tbl-wrap {
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.tbl-scroll { overflow-y: auto; }
+.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  table-layout: fixed;
+}
+.tbl th {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-2);
+  padding: 8px 10px;
+  border-bottom: 0.5px solid var(--border);
+  text-align: left;
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.tbl th:hover { color: var(--text); }
+.tbl th .sa { opacity: 0.3; margin-left: 3px; font-size: 9px; }
+.tbl th.sorted .sa { opacity: 1; }
+.tbl th.r, .tbl td.r { text-align: right; }
+.tbl td {
+  padding: 9px 10px;
+  border-bottom: 0.5px solid var(--border);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tbl tbody tr:last-child td { border-bottom: none; }
+.tbl tbody tr.clickable:hover td { background: var(--surface-2); cursor: pointer; }
+.tbl tbody tr.row-active td { background: var(--accent-bg); }
+
+/* HubSpot badge */
+.hs-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #ff7a59; color: #fff;
+  font-size: 9px; font-weight: 600;
+  padding: 2px 6px; border-radius: 4px;
+  text-decoration: none; letter-spacing: 0.5px;
+}
+
+/* Status dots */
+.status-live::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--success); margin-right: 5px; vertical-align: middle; }
+.status-live { font-size: 11px; color: var(--success); }
+.status-paused    { font-size: 11px; color: var(--text-3); }
+.status-completed { font-size: 11px; color: var(--info); }
+.status-error     { font-size: 11px; color: var(--danger); }
+
+/* ============================================================
+   JOURNEY EXPAND
+   ============================================================ */
+.journey-row td { padding: 0 !important; border-bottom: 0.5px solid var(--border) !important; }
+.journey-inner {
+  display: none;
+  padding: 14px 16px;
+  background: var(--surface-2);
+}
+.journey-inner.open { display: block; }
+.journey-label { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-3); margin-bottom: 10px; }
+.journey-steps { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 4px; }
+.jstep { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 44px; }
+.jicon {
+  width: 30px; height: 30px; border-radius: 50%;
+  border: 0.5px solid var(--border-md);
+  background: var(--surface);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+}
+.jicon.replied { border-color: var(--success); background: var(--success-bg); }
+.jlbl { font-size: 9px; color: var(--text-3); text-align: center; line-height: 1.3; }
+.jarr { color: var(--text-3); font-size: 11px; margin-top: 8px; padding: 0 2px; }
+
+/* ============================================================
+   EKG CANVAS
+   ============================================================ */
+.ekg-slot {
+  width: 90px; min-width: 90px;
+  border-radius: var(--radius);
+  background: var(--ekg-bg);
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ============================================================
+   LOADING / ERROR STATES
+   ============================================================ */
+.state-msg {
+  text-align: center;
+  padding: 24px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.state-msg.error { color: var(--danger); }
+
+/* ============================================================
+   REFRESH INDICATOR
+   ============================================================ */
+.last-updated { font-size: 11px; color: var(--text-3); }
+.refreshing { opacity: 0.5; }
+
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     PASSWORD GATE
+     ============================================================ -->
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <h1>RWT Growth</h1>
+    <p>Campaign Dashboard</p>
+    <input type="password" id="pwInput" placeholder="Password" onkeydown="if(event.key==='Enter')checkPw()">
+    <button class="btn-primary" onclick="checkPw()">Enter</button>
+    <p class="gate-error" id="pwError"></p>
+    <button class="gate-demo-btn" onclick="startDemo()">Preview with demo data</button>
+  </div>
+</div>
+
+<!-- ============================================================
+     API KEY SCREEN
+     ============================================================ -->
+<div class="gate" id="apiScreen" style="display:none;">
+  <div class="gate-card">
+    <h1>Connect to Live Data</h1>
+    <p>Your Railway proxy handles API keys automatically.<br>Just click Connect to pull live data.</p>
+    <button class="btn-primary" onclick="connectAPIs()" style="margin-top:4px;">Connect</button>
+    <p class="gate-error" id="apiError"></p>
+    <p class="gate-hint">
+      Or enter keys manually for local testing:<br>
+      <input type="password" id="apiKeyInput" placeholder="HubSpot token (optional)" style="margin-top:6px; margin-bottom:4px; font-size:11px; padding:5px 8px; width:100%; box-sizing:border-box;">
+      <input type="password" id="instantlyKeyInput" placeholder="Instantly key (optional)" style="margin-bottom:4px; font-size:11px; padding:5px 8px; width:100%; box-sizing:border-box;">
+    </p>
+    <button class="gate-demo-btn" onclick="startDemo()">Skip -- use demo data</button>
+  </div>
+</div>
+
+<!-- ============================================================
+     DASHBOARD
+     ============================================================ -->
+<div id="dashboard">
+
+  <div class="dash-header">
+    <h1>RWT Growth — Campaign Dashboard</h1>
+    <div class="header-right">
+      <select id="skinPicker" class="btn" style="padding:5px 10px;" onchange="applySkin(this.value)">
+        <option value="default-light">Standard</option>
+        <option value="cyberpunk">Cyberpunk</option>
+        <option value="minimal-grey">Minimal Grey</option>
+      </select>
+      <span class="last-updated" id="lastUpdated"></span>
+      <span class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connLabel">Connecting...</span></span>
+      <button class="btn" onclick="refreshAll()">&#8635; Refresh</button>
+      <button class="btn" onclick="logout()">Disconnect</button>
+    </div>
+  </div>
+
+  <main>
+
+    <!-- COMPONENT: comp-campaign-selector -->
+    <section data-component="comp-campaign-selector">
+      <div class="campaign-selector" id="campaignSelector">
+        <div class="campaign-selector-header">
+          <div class="campaign-selector-title">Campaign Filter</div>
+          <button class="btn-toggle-selector" onclick="toggleCampaignSelector()">
+            <span id="toggleSelectorText">Collapse</span>
+          </button>
+        </div>
+        <div class="campaign-selector-body">
+          <input 
+            type="text" 
+            class="campaign-search" 
+            id="campaignSearch" 
+            placeholder="Search campaigns by name..."
+            oninput="filterCampaignList()"
+          >
+          <div class="campaign-list" id="campaignList">
+            <div style="padding:20px; text-align:center; color:var(--text-3);">Loading campaigns...</div>
+          </div>
+          <div class="campaign-selector-actions">
+            <button class="btn" onclick="selectAllCampaigns()">Select All</button>
+            <button class="btn" onclick="clearAllCampaigns()">Clear All</button>
+            <select id="instantlyDateFilter" class="btn" onchange="updateInstantlyDays()">
+              <option value="">Instantly: All-time</option>
+              <option value="7">Instantly: Last 7 days</option>
+              <option value="30">Instantly: Last 30 days</option>
+              <option value="60">Instantly: Last 60 days</option>
+              <option value="90">Instantly: Last 90 days</option>
+              <option value="365">Instantly: Last year</option>
+            </select>
+            <select id="dateRangeFilter" class="btn">
+              <option value="7" selected>Closed: Last 7 days</option>
+              <option value="30">Closed: Last 30 days</option>
+              <option value="60">Closed: Last 60 days</option>
+              <option value="90">Closed: Last 90 days</option>
+              <option value="365">Closed: Last year</option>
+            </select>
+            <span class="selected-count" id="selectedCount">0 campaigns selected</span>
+            <button class="btn-apply" onclick="applyCampaignFilter()">Apply Filters</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- COMPONENT: comp-stats -->
+    <section data-component="comp-stats">
+      <div class="grid-4">
+        <div class="metric-card"><p class="metric-label">Total emails sent</p><p class="metric-value" id="stat-sent">—</p></div>
+        <div class="metric-card"><p class="metric-label">Leads contacted</p><p class="metric-value" id="stat-contacted">—</p></div>
+        <div class="metric-card"><p class="metric-label">New leads contacted</p><p class="metric-value" id="stat-new">—</p></div>
+        <div class="metric-card accent"><p class="metric-label">Leads generated</p><p class="metric-value" id="stat-leads">—</p><p class="metric-sub">positive replies</p></div>
+      </div>
+    </section>
+
+    <!-- COMPONENT: comp-rates -->
+    <section data-component="comp-rates">
+      <div class="grid-4">
+        <div class="metric-card"><p class="metric-label">Reply rate (with OOO)</p><p class="metric-value" id="rate-ooo">—</p><p class="metric-sub" id="rate-ooo-n">—</p></div>
+        <div class="metric-card"><p class="metric-label">Reply rate</p><p class="metric-value" id="rate-reply">—</p><p class="metric-sub" id="rate-reply-n">—</p></div>
+        <div class="metric-card"><p class="metric-label">Positive reply rate</p><p class="metric-value" id="rate-pos">—</p><p class="metric-sub">of all replies</p></div>
+        <div class="metric-card"><p class="metric-label">Bounce rate</p><p class="metric-value" id="rate-bounce">—</p><p class="metric-sub" id="rate-bounce-n">—</p></div>
+      </div>
+    </section>
+
+    <!-- COMPONENT: comp-charts -->
+    <section data-component="comp-charts">
+      <div class="grid-2">
+
+        <!-- comp-chart-emails -->
+        <div class="panel" data-component="comp-chart-emails" style="margin:0;">
+          <div class="panel-header">
+            <span class="panel-title">Daily emails sent</span>
+          </div>
+          <div style="position:relative; height:175px;"><canvas id="eChart"></canvas></div>
+        </div>
+
+        <!-- comp-chart-metrics -->
+        <div class="panel" data-component="comp-chart-metrics" style="margin:0;">
+          <div class="panel-header">
+            <span class="panel-title">Daily metrics</span>
+            <div class="btn-tab-group">
+              <button class="btn active" id="btnCount" onclick="setMetricView('count')">Count</button>
+              <button class="btn" id="btnPct" onclick="setMetricView('pct')">%</button>
+            </div>
+          </div>
+          <div style="position:relative; height:175px;"><canvas id="mChart"></canvas></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- COMPONENT: comp-campaigns -->
+    <section data-component="comp-campaigns">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Campaigns</span>
+          <div class="btn-tab-group" id="campFilterBtns">
+            <button class="btn active" onclick="setCampFilter('live',this)">Live</button>
+            <button class="btn" onclick="setCampFilter('paused',this)">Paused</button>
+            <button class="btn" onclick="setCampFilter('completed',this)">Completed</button>
+            <button class="btn" onclick="setCampFilter('error',this)">Error</button>
+            <button class="btn" onclick="setCampFilter('all',this)">All</button>
+          </div>
+        </div>
+        <div style="display:flex; gap:12px; align-items:flex-start;">
+          <div class="ekg-slot"><canvas id="ekgCanvas" width="90" height="90"></canvas></div>
+          <div style="flex:1; min-width:0;">
+            <div class="tbl-wrap">
+              <table class="tbl">
+                <thead><tr>
+                  <th style="width:30%;">Campaign</th>
+                  <th style="width:10%;">Status</th>
+                  <th class="r" style="width:10%;">Sent</th>
+                  <th class="r" style="width:10%;">Reply %</th>
+                  <th class="r" style="width:10%;">Replies</th>
+                  <th class="r" style="width:10%;">Leads</th>
+                  <th class="r" style="width:10%;">Bounced</th>
+                </tr></thead>
+                <tbody id="campBody"><tr><td colspan="7" class="state-msg">Loading...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- COMPONENT: comp-prospects -->
+    <section data-component="comp-prospects">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Prospects<small>Outreach Contact Status = Prospect / Proposal Sent in HubSpot</small></span>
+          <div class="panel-actions">
+            <span class="last-updated" id="prospCount">-- prospects</span>
+            <button class="btn btn-icon" onclick="exportCSV('prospects')">&#8595; CSV</button>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table class="tbl" id="prospTbl">
+            <thead><tr>
+              <th style="width:4%;"></th>
+              <th style="width:13%;" onclick="sortTable('prospects','name')">Contact <span class="sa">↕</span></th>
+              <th style="width:13%;" onclick="sortTable('prospects','company')">Company <span class="sa">↕</span></th>
+              <th style="width:14%;" onclick="sortTable('prospects','campaign')">Campaign <span class="sa">↕</span></th>
+              <th style="width:10%;" onclick="sortTable('prospects','firstReply')">First reply <span class="sa">↕</span></th>
+              <th style="width:10%;" onclick="sortTable('prospects','days')">Days <span class="sa">↕</span></th>
+              <th style="width:10%;">Deal stage</th>
+              <th style="width:10%;" onclick="sortTable('prospects','outreachStatus')">Status <span class="sa">↕</span></th>
+              <th style="width:10%;">Move to</th>
+              <th style="width:6%;"></th>
+            </tr></thead>
+            <tbody id="prospBody"><tr><td colspan="10" class="state-msg">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- COMPONENT: comp-leads -->
+    <section data-component="comp-leads">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Leads generated<small>click a row to see HubSpot journey</small></span>
+          <div class="panel-actions">
+            <input type="text" class="search-input" id="leadSearch" placeholder="Search name, company..." oninput="renderLeads()">
+            <span class="last-updated" id="leadCount">-- leads</span>
+            <button class="btn btn-icon" onclick="exportCSV('leads')">&#8595; CSV</button>
+          </div>
+        </div>
+        <div class="tbl-wrap tbl-scroll" style="max-height:460px;">
+          <table class="tbl">
+            <thead><tr>
+              <th style="width:4%;"></th>
+              <th style="width:11%;" onclick="sortTable('leads','name')">Name <span class="sa">↕</span></th>
+              <th style="width:16%;" onclick="sortTable('leads','email')">Email <span class="sa">↕</span></th>
+              <th style="width:11%;" onclick="sortTable('leads','company')">Company <span class="sa">↕</span></th>
+              <th style="width:13%;" onclick="sortTable('leads','campaign')">Campaign <span class="sa">↕</span></th>
+              <th style="width:8%;" onclick="sortTable('leads','date')">Reply date <span class="sa">↕</span></th>
+              <th style="width:7%;" onclick="sortTable('leads','days')">Days <span class="sa">↕</span></th>
+              <th style="width:10%;" onclick="sortTable('leads','outreachStatus')">Status <span class="sa">↕</span></th>
+              <th style="width:10%;">Move to</th>
+              <th style="width:5%;"></th>
+              <th style="width:5%;"></th>
+            </tr></thead>
+            <tbody id="leadBody"><tr><td colspan="11" class="state-msg">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- COMPONENT: comp-closed -->
+    <section data-component="comp-closed">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Closed Leads<small>not now, not a fit, not interested, opted out, went cold</small></span>
+          <div class="panel-actions">
+            <input type="text" class="search-input" id="closedSearch" placeholder="Search name, company..." oninput="renderClosed()">
+            <span class="last-updated" id="closedCount">-- closed</span>
+            <button class="btn btn-icon" onclick="exportCSV('closed')">&#8595; CSV</button>
+          </div>
+        </div>
+        <div class="tbl-wrap tbl-scroll" style="max-height:460px;">
+          <table class="tbl">
+            <thead><tr>
+              <th style="width:4%;"></th>
+              <th style="width:12%;" onclick="sortTable('closed','name')">Name <span class="sa">↕</span></th>
+              <th style="width:16%;" onclick="sortTable('closed','email')">Email <span class="sa">↕</span></th>
+              <th style="width:12%;" onclick="sortTable('closed','company')">Company <span class="sa">↕</span></th>
+              <th style="width:13%;" onclick="sortTable('closed','campaign')">Campaign <span class="sa">↕</span></th>
+              <th style="width:8%;" onclick="sortTable('closed','date')">Reply date <span class="sa">↕</span></th>
+              <th style="width:7%;" onclick="sortTable('closed','days')">Days <span class="sa">↕</span></th>
+              <th style="width:10%;" onclick="sortTable('closed','outreachStatus')">Status <span class="sa">↕</span></th>
+              <th style="width:10%;">Move to</th>
+              <th style="width:8%;"></th>
+            </tr></thead>
+            <tbody id="closedBody"><tr><td colspan="10" class="state-msg">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<script>
+/* ================================================================
+   CONFIG — adjust these settings without touching anything else
+   ================================================================ */
+const CONFIG = {
+  // Shared password for the team
+  password: 'rwtgrowth2025',
+
+  // HubSpot contact property names (must match your HubSpot setup exactly)
+  hubspot: {
+    properties: {
+      outreachStatus:  'outreach_contact_status', // The custom property you created
+      campaignName:    'instantly_campaign_name',  // Populated by Instantly webhook
+      firstReplyDate:  'first_reply_date',          // Populated by Instantly webhook
+      dealStage:       'dealstage',
+    },
+
+    // ----------------------------------------------------------------
+    // STATUS ROUTING
+    // Set each array to the EXACT internal option values from your
+    // HubSpot "Outreach Contact Status" property (the API value, not
+    // the display label — find it in HubSpot → Property Settings →
+    // Edit property → Options tab → "Internal value" column).
+    //
+    // The dashboard will ONLY use these values — it creates nothing new.
+    // Contacts whose status is not listed in any array will not appear.
+    // ----------------------------------------------------------------
+    leadStatuses:     ['interested'],                        // -> Leads table
+    prospectStatuses: ['prospect', 'proposal_sent'],         // -> Prospects table
+    closedStatuses:   ['not_now', 'not_a_fit', 'not_interested', 'opted_out', 'went_cold'],
+
+    // Statuses available in the "Move to" dropdown (manual transitions only).
+    // System-set statuses (bounced, invalid_email, etc.) are excluded.
+    manualStatuses:   ['interested', 'prospect', 'proposal_sent', 'not_now', 'not_a_fit', 'not_interested', 'opted_out', 'went_cold'],
+
+    // Display label + badge CSS class for each status value.
+    // Add any option that exists in your HubSpot property.
+    statusMeta: {
+      interested:      { label: 'Interested',       css: 'hs-interested'      },
+      prospect:        { label: 'Prospect',          css: 'hs-prospect'        },
+      proposal_sent:   { label: 'Proposal Sent',     css: 'hs-proposal_sent'   },
+      meeting_booked:  { label: 'Meeting booked',    css: 'hs-meeting_booked'  },
+      connected:       { label: 'Connected',         css: 'hs-connected'       },
+      past_engagement: { label: 'Past engagement',   css: 'hs-past_engagement' },
+      not_now:         { label: 'Not now',           css: 'hs-not_now'         },
+      no_reply:        { label: 'No reply',          css: 'hs-no_reply'        },
+      not_a_fit:       { label: 'Not a fit',         css: 'hs-not_a_fit'       },
+      not_interested:  { label: 'Not interested',    css: 'hs-not_interested'  },
+      opted_out:       { label: 'Opted out',         css: 'hs-opted_out'       },
+      went_cold:       { label: 'Went cold',         css: 'hs-went_cold'       },
+    },
+  },
+
+  // Colour thresholds for "days since" columns
+  thresholds: {
+    leadWarnDays:    14,  // amber at this many days since reply
+    leadDangerDays:  30,  // red at this many days
+    prospWarnDays:   14,  // amber for discovery time
+    prospDangerDays: 30,  // red — stale deal flag triggers here
+  },
+
+  // Auto-refresh interval in minutes (0 = disabled)
+  autoRefreshMinutes: 0,
+};
+
+/* ================================================================
+   STATE
+   ================================================================ */
+let STATE = {
+  mode:            'demo',   // 'live' | 'demo'
+  apiKey:          null,     // HubSpot token
+  instantlyKey:    null,     // Instantly API key
+  lastRefresh:     null,     // ISO timestamp of last successful refresh (for changes-only pulls)
+  campFilter:      'live',
+  metricView:      'count',
+  closedLeadsDays: 7,        // days to show in closed leads table (7, 30, 60, 90, 365)
+  instantlyDays:   null,     // days for Instantly stats filter (null = all-time, 7, 30, 60, 90, 365)
+  selectedCampaigns: [],     // array of campaign IDs selected for filtering
+  allCampaigns:    [],       // full campaign list from API
+  leadsSort:       { col: null, asc: true },
+  prospSort:       { col: null, asc: true },
+  closedSort:      { col: null, asc: true },
+  leadsOpen:       null,
+  leadsData:       [],
+  prospData:       [],
+  closedData:      [],
+  campsData:       [],
+};
+
+/* ================================================================
+   GATE LOGIC
+   ================================================================ */
+function checkPw() {
+  const val = document.getElementById('pwInput').value;
+  if (val === CONFIG.password) {
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('apiScreen').style.display = 'flex';
+  } else {
+    document.getElementById('pwError').textContent = 'Incorrect password.';
+  }
+}
+
+function connectAPIs() {
+  const hsKey = document.getElementById('apiKeyInput')?.value?.trim();
+  const instKey = document.getElementById('instantlyKeyInput')?.value?.trim();
+  if (hsKey) STATE.apiKey = hsKey;
+  if (instKey) STATE.instantlyKey = instKey;
+  STATE.mode = 'live';
+  document.getElementById('apiScreen').style.display = 'none';
+  launchDashboard();
+}
+
+function startDemo() {
+  STATE.mode = 'demo';
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('apiScreen').style.display = 'none';
+  launchDashboard();
+}
+
+function logout() {
+  STATE.apiKey = null;
+  location.reload();
+}
+
+/* ================================================================
+   API CONFIGURATION
+   ================================================================
+   Both APIs route through your Railway server to avoid CORS issues
+   and keep API keys on the server, not in the browser.
+
+   The dashboard no longer needs API keys entered in the browser.
+   Your Railway server (instantly-webhook) holds the keys in its
+   environment variables and forwards requests.
+   ================================================================ */
+const PROXY_BASE = 'https://instantly-webhook-production-0e3a.up.railway.app';
+const HS_BASE = PROXY_BASE + '/proxy/hubspot';
+const INSTANTLY_BASE = PROXY_BASE + '/proxy/instantly/api';
+
+// For LOCAL testing without Railway, uncomment these and enter keys in the connection screen:
+// const HS_BASE = 'https://api.hubapi.com';
+// const INSTANTLY_BASE = 'https://api.instantly.ai/api';
+
+/* ================================================================
+   HUBSPOT API SERVICE
+   ================================================================ */
+async function hsGet(path) {
+  const headers = {};
+  // If using direct HubSpot URL (local testing), add auth header
+  if (STATE.apiKey && !HS_BASE.includes('/proxy/')) {
+    headers['Authorization'] = 'Bearer ' + STATE.apiKey;
+  }
+  const r = await fetch(HS_BASE + path, { headers });
+  if (!r.ok) throw new Error('HubSpot API error: ' + r.status);
+  return r.json();
+}
+
+async function hsPatch(path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (STATE.apiKey && !HS_BASE.includes('/proxy/')) {
+    headers['Authorization'] = 'Bearer ' + STATE.apiKey;
+  }
+  const r = await fetch(HS_BASE + path, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error('HubSpot PATCH error: ' + r.status);
+  return r.json();
+}
+
+// Paginated search -- pulls ALL matching results, not just first 100.
+async function hsSearchAll(objectType, filterGroups, properties) {
+  let allResults = [];
+  let after = undefined;
+  do {
+    const body = { filterGroups, properties, limit: 100 };
+    if (after) body.after = after;
+    const headers = { 'Content-Type': 'application/json' };
+    if (STATE.apiKey && !HS_BASE.includes('/proxy/')) {
+      headers['Authorization'] = 'Bearer ' + STATE.apiKey;
+    }
+    const r = await fetch(`${HS_BASE}/crm/v3/objects/${objectType}/search`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error('HubSpot search error: ' + r.status);
+    const data = await r.json();
+    allResults = allResults.concat(data.results || []);
+    after = data.paging?.next?.after || null;
+  } while (after);
+  return allResults;
+}
+
+// Build filter groups from status arrays.
+// HubSpot search: use a single filterGroup with IN operator for status values.
+// HubSpot limits filterGroups to 3 max, so we can't use one per status value.
+// If campaignNames provided, adds campaign filter to the same filterGroup (AND logic).
+function statusFilterGroups(values, campaignNames, extraFilters) {
+  const filters = [
+    { propertyName: CONFIG.hubspot.properties.outreachStatus, operator: 'IN', values: values },
+  ];
+  
+  // Add campaign filter only if:
+  // 1. campaignNames is an array (not null/undefined)
+  // 2. It's not empty
+  // 3. It's a subset of campaigns (not all)
+  if (Array.isArray(campaignNames) && campaignNames.length > 0 && STATE.allCampaigns && STATE.allCampaigns.length > 0 && campaignNames.length < STATE.allCampaigns.length) {
+    filters.push({
+      propertyName: CONFIG.hubspot.properties.campaignName,
+      operator: 'IN',
+      values: campaignNames
+    });
+  }
+  
+  if (extraFilters) filters.push(...extraFilters);
+  
+  return [{ filters }];
+}
+
+// Standard contact field list
+const HS_CONTACT_PROPS = () => {
+  const p = CONFIG.hubspot.properties;
+  return ['firstname','lastname','email','company', p.campaignName, p.firstReplyDate, p.outreachStatus, p.dealStage];
+};
+
+// Parse a HubSpot contact into a lead-shaped object
+function parseContactAsLead(c) {
+  const p = c.properties;
+  const props = CONFIG.hubspot.properties;
+  const replyDate = p[props.firstReplyDate] ? new Date(p[props.firstReplyDate]) : null;
+  const days = replyDate ? Math.floor((Date.now() - replyDate) / 86400000) : 0;
+  return {
+    id:             c.id,
+    name:           [p.firstname, p.lastname].filter(Boolean).join(' ') || 'Unknown',
+    email:          p.email || '',
+    company:        p.company || '',
+    campaign:       p[props.campaignName] || '',
+    date:           replyDate ? replyDate.toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}) : '',
+    days,
+    outreachStatus: p[props.outreachStatus] || '',
+    steps:          [],
+  };
+}
+
+// Parse a HubSpot contact into a prospect-shaped object
+function parseContactAsProspect(c) {
+  const lead = parseContactAsLead(c);
+  const p = c.properties;
+  const props = CONFIG.hubspot.properties;
+  return {
+    ...lead,
+    firstReply: lead.date,
+    stage:      p[props.dealStage] || 'Discovery',
+    stale:      lead.days >= CONFIG.thresholds.prospDangerDays,
+  };
+}
+
+// --- FULL LOAD (first open) ---
+async function fetchLeadsFromHS() {
+  const campaignNames = getFilteredCampaignNames();
+  const results = await hsSearchAll('contacts',
+    statusFilterGroups(CONFIG.hubspot.leadStatuses, campaignNames),
+    HS_CONTACT_PROPS()
+  );
+  return results.map(parseContactAsLead);
+}
+
+async function fetchProspectsFromHS() {
+  const campaignNames = getFilteredCampaignNames();
+  const results = await hsSearchAll('contacts',
+    statusFilterGroups(CONFIG.hubspot.prospectStatuses, campaignNames),
+    HS_CONTACT_PROPS()
+  );
+  return results.map(parseContactAsProspect);
+}
+
+async function fetchClosedFromHS() {
+  const campaignNames = getFilteredCampaignNames();
+  // Use closedLeadsDays (defaults to 7) to avoid showing 700+ old contacts from backfill
+  const cutoff = new Date(Date.now() - STATE.closedLeadsDays * 86400000).toISOString();
+  const results = await hsSearchAll('contacts',
+    statusFilterGroups(CONFIG.hubspot.closedStatuses, campaignNames, [
+      { propertyName: 'lastmodifieddate', operator: 'GTE', value: cutoff }
+    ]),
+    HS_CONTACT_PROPS()
+  );
+  return results.map(parseContactAsLead);
+}
+
+// --- SMART REFRESH (changes only since last refresh) ---
+async function fetchChangedContacts(since) {
+  // Pull ALL contacts modified since last refresh, regardless of status.
+  // Then route each one to the correct table.
+  const allStatuses = [
+    ...CONFIG.hubspot.leadStatuses,
+    ...CONFIG.hubspot.prospectStatuses,
+    ...CONFIG.hubspot.closedStatuses,
+  ];
+  const results = await hsSearchAll('contacts',
+    statusFilterGroups(allStatuses, [
+      { propertyName: 'lastmodifieddate', operator: 'GTE', value: since }
+    ]),
+    HS_CONTACT_PROPS()
+  );
+  return results;
+}
+
+function applyChangedContacts(changedResults) {
+  const props = CONFIG.hubspot.properties;
+  for (const c of changedResults) {
+    const status = c.properties[props.outreachStatus] || '';
+    const id = c.id;
+
+    // Remove from all tables first
+    STATE.leadsData   = STATE.leadsData.filter(x => x.id !== id);
+    STATE.prospData   = STATE.prospData.filter(x => x.id !== id);
+    STATE.closedData  = STATE.closedData.filter(x => x.id !== id);
+
+    // Route to correct table
+    if (CONFIG.hubspot.leadStatuses.includes(status)) {
+      STATE.leadsData.push(parseContactAsLead(c));
+    } else if (CONFIG.hubspot.prospectStatuses.includes(status)) {
+      STATE.prospData.push(parseContactAsProspect(c));
+    } else if (CONFIG.hubspot.closedStatuses.includes(status)) {
+      STATE.closedData.push(parseContactAsLead(c));
+    }
+    // If status isn't in any array (e.g. no_reply, bounced), it drops out of all tables
+  }
+}
+
+async function fetchContactJourney(contactId) {
+  const res = await hsGet(`/crm/v3/objects/contacts/${contactId}/associations/emails`);
+  if (!res.results || !res.results.length) return [];
+  const emailIds = res.results.slice(0, 10).map(e => e.id);
+  const details = await Promise.all(emailIds.map(id =>
+    hsGet(`/crm/v3/objects/emails/${id}?properties=hs_email_subject,hs_email_status,hs_timestamp`)
+  ));
+  const sorted = details
+    .filter(e => e.properties)
+    .sort((a, b) => new Date(a.properties.hs_timestamp) - new Date(b.properties.hs_timestamp));
+  const steps = [];
+  for (const e of sorted) {
+    const isReply = e.properties.hs_email_status === 'RECEIVED';
+    steps.push({ t: isReply ? 'replied' : 'sent', l: isReply ? 'Reply ✓' : ('Step ' + (steps.length + 1)) });
+    if (isReply) break;
+  }
+  return steps;
+}
+
+/* ================================================================
+   INSTANTLY API SERVICE
+   ================================================================ */
+async function instGet(path) {
+  let url = INSTANTLY_BASE + path;
+  // If using direct Instantly URL (local testing), add api_key param
+  if (STATE.instantlyKey && !INSTANTLY_BASE.includes('/proxy/')) {
+    const sep = path.includes('?') ? '&' : '?';
+    url += sep + 'api_key=' + STATE.instantlyKey;
+  }
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('Instantly API error: ' + r.status);
+  return r.json();
+}
+
+async function instGetV2(path) {
+  // INSTANTLY_BASE = .../proxy/instantly/api
+  // We want: .../proxy/instantly/api/v2/campaigns
+  const url = INSTANTLY_BASE + '/v2' + path;
+  const headers = {};
+  if (STATE.instantlyKey && !INSTANTLY_BASE.includes('/proxy/')) {
+    headers['Authorization'] = 'Bearer ' + STATE.instantlyKey;
+  }
+  const r = await fetch(url, { headers });
+  if (!r.ok) throw new Error('Instantly v2 API error: ' + r.status);
+  return r.json();
+}
+
+async function fetchInstantlyCampaigns() {
+  try {
+    // Fetch campaigns
+    const data = await instGetV2('/campaigns?limit=100&status=1');
+    const allCamps = data.items || data.data || data || [];
+
+    // Also fetch paused and completed
+    const paused = await instGetV2('/campaigns?limit=100&status=0').catch(() => ({ items: [] }));
+    const completed = await instGetV2('/campaigns?limit=100&status=2').catch(() => ({ items: [] }));
+
+    const all = [
+      ...allCamps.map(c => ({ ...c, _status: 'live' })),
+      ...(paused.items || paused.data || paused || []).map(c => ({ ...c, _status: 'paused' })),
+      ...(completed.items || completed.data || completed || []).map(c => ({ ...c, _status: 'completed' })),
+    ];
+
+    // Fetch analytics for all campaigns
+    const analytics = await instGetV2('/campaigns/analytics').catch(() => []);
+    const analyticsArray = Array.isArray(analytics) ? analytics : (analytics.items || analytics.data || []);
+    const statsMap = {};
+    for (const stat of analyticsArray) {
+      statsMap[stat.campaign_id] = stat;
+    }
+
+    return all.map(c => {
+      const stats = statsMap[c.id] || {};
+      const replies = stats.reply_count_unique || stats.reply_count || 0;
+      const sent = stats.emails_sent_count || 0;
+      const replyRate = sent > 0 ? ((replies / sent) * 100).toFixed(1) + '%' : '0%';
+
+      return {
+        id:      c.id,
+        name:    c.name || 'Untitled',
+        status:  c._status,
+        sent:    sent,
+        rrate:   replyRate,
+        replies: replies,
+        leads:   stats.total_opportunities || 0,
+        bounced: stats.bounced_count || 0,
+      };
+    });
+  } catch (err) {
+    console.warn('Instantly campaigns fetch failed:', err);
+    return [];
+  }
+}
+
+async function fetchInstantlyAnalytics() {
+  try {
+    // Build query parameters
+    const params = new URLSearchParams();
+    
+    // Add selected campaign IDs (only if campaigns have loaded)
+    if (STATE.allCampaigns && STATE.allCampaigns.length > 0) {
+      const selectedIds = getSelectedCampaignIds();
+      if (selectedIds && selectedIds.length > 0 && selectedIds.length < STATE.allCampaigns.length) {
+        selectedIds.forEach(id => params.append('ids[]', id));
+      }
+    }
+    
+    // Add date range if set
+    if (STATE.instantlyDays) {
+      const end = new Date().toISOString().slice(0, 10);
+      const start = new Date(Date.now() - STATE.instantlyDays * 86400000).toISOString().slice(0, 10);
+      params.append('start_date', start);
+      params.append('end_date', end);
+    }
+    
+    const queryString = params.toString();
+    const endpoint = queryString ? `/campaigns/analytics/overview?${queryString}` : '/campaigns/analytics/overview';
+    
+    const data = await instGetV2(endpoint);
+    const s = data || {};
+    return {
+      sent:           s.emails_sent_count || 0,
+      contacted:      s.contacted_count || 0,
+      newContacts:    s.new_leads_contacted || s.contacted_count || 0,
+      leadsGenerated: s.total_opportunities || 0,
+      ooo:            s.out_of_office_count || 0,
+      replyCount:     s.reply_count || 0,
+      replyUnique:    s.reply_count_unique || 0,
+      bounceCount:    s.bounced_count || 0,
+    };
+  } catch (err) {
+    console.warn('Instantly analytics fetch failed:', err);
+    return null;
+  }
+}
+
+async function fetchInstantlyDailyData() {
+  try {
+    // Use Instantly date filter if set, otherwise default to last 30 days
+    const days = STATE.instantlyDays || 30;
+    const end = new Date().toISOString().slice(0, 10);
+    const start = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+    
+    // Build query parameters
+    const params = new URLSearchParams();
+    params.append('start_date', start);
+    params.append('end_date', end);
+    
+    // Add selected campaign IDs (only if campaigns have loaded)
+    if (STATE.allCampaigns && STATE.allCampaigns.length > 0) {
+      const selectedIds = getSelectedCampaignIds();
+      if (selectedIds && selectedIds.length > 0 && selectedIds.length < STATE.allCampaigns.length) {
+        selectedIds.forEach(id => params.append('ids[]', id));
+      }
+    }
+    
+    const data = await instGetV2(`/campaigns/analytics/daily?${params.toString()}`);
+    const rows = Array.isArray(data) ? data : (data.items || data.data || data || []);
+
+    const labels = [];
+    const newLeadData = [];
+    const followupData = [];
+    const replyOOO = [];
+    const replyCount = [];
+    const positive = [];
+    const bounces = [];
+
+    for (const row of rows) {
+      const d = new Date(row.date);
+      labels.push(d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }));
+      const newSent = row.new_leads_contacted || 0;
+      const totalSent = row.sent || 0;
+      newLeadData.push(newSent);
+      followupData.push(Math.max(0, totalSent - newSent));
+      replyOOO.push((row.replies || 0) + (row.out_of_office_count || 0));
+      replyCount.push(row.replies || 0);
+      positive.push(row.opportunities || 0);
+      bounces.push(row.bounced_count || 0);
+    }
+
+    return { labels, newLeadData, followupData, replyOOO, replyCount, positive, bounces };
+  } catch (err) {
+    console.warn('Instantly daily data fetch failed:', err);
+    return null;
+  }
+}
+
+/* Change a contact's outreach status in HubSpot, then move them
+   to the correct table in the UI without a full refresh. */
+async function changeContactStatus(contactId, newStatus, sourceTable) {
+  if (STATE.mode === 'live' && STATE.apiKey) {
+    try {
+      await hsPatch(`/crm/v3/objects/contacts/${contactId}`, {
+        properties: { [CONFIG.hubspot.properties.outreachStatus]: newStatus }
+      });
+    } catch (err) {
+      alert('Could not update HubSpot: ' + err.message);
+      return;
+    }
+  }
+
+  // Move the contact between tables in memory
+  let contact = null;
+  const remove = (arr, id) => { const idx = arr.findIndex(c => c.id === id); if (idx > -1) { contact = arr.splice(idx, 1)[0]; } };
+  remove(STATE.leadsData, contactId);
+  remove(STATE.prospData, contactId);
+  remove(STATE.closedData, contactId);
+
+  if (!contact) return; // shouldn't happen
+
+  contact.outreachStatus = newStatus;
+
+  // Route to the right table
+  if (CONFIG.hubspot.leadStatuses.includes(newStatus)) {
+    STATE.leadsData.push(contact);
+  } else if (CONFIG.hubspot.prospectStatuses.includes(newStatus)) {
+    // Convert lead fields to prospect fields if needed
+    if (!contact.firstReply) contact.firstReply = contact.date || '';
+    if (!contact.stage) contact.stage = 'Discovery';
+    contact.stale = contact.days >= CONFIG.thresholds.prospDangerDays;
+    STATE.prospData.push(contact);
+  } else if (CONFIG.hubspot.closedStatuses.includes(newStatus)) {
+    STATE.closedData.push(contact);
+  }
+
+  // Re-render all affected tables
+  renderLeads();
+  renderProspRows();
+  renderClosed();
+}
+
+/* ================================================================
+   SKIN SWITCHER
+   ================================================================ */
+const SKINS = {
+  'default-light': {
+    '--bg':'#f3f4f6','--surface':'#ffffff','--surface-2':'#f9fafb',
+    '--border':'rgba(0,0,0,0.08)','--border-md':'rgba(0,0,0,0.14)',
+    '--text':'#111827','--text-2':'#4b5563','--text-3':'#9ca3af',
+    '--accent':'#2563eb','--accent-bg':'#eff6ff','--accent-text':'#1e40af',
+    '--success':'#16a34a','--success-bg':'#f0fdf4',
+    '--warn':'#d97706','--warn-bg':'#fffbeb',
+    '--danger':'#dc2626','--danger-bg':'#fef2f2',
+    '--info':'#0891b2','--info-bg':'#ecfeff',
+    '--ekg-bg':'#000000','--ekg-line':'#00e5ff',
+    '--radius':'8px','--radius-lg':'12px',
+    '--font':'system-ui, -apple-system, sans-serif','--font-size':'13px',
+  },
+  'cyberpunk': {
+    '--bg':'#07071a','--surface':'#0c0c24','--surface-2':'#0f0f2e',
+    '--border':'rgba(0,229,255,0.12)','--border-md':'rgba(0,229,255,0.25)',
+    '--text':'#e0e0ff','--text-2':'#7070b0','--text-3':'#404080',
+    '--accent':'#00e5ff','--accent-bg':'rgba(0,229,255,0.08)','--accent-text':'#00e5ff',
+    '--success':'#00ff9f','--success-bg':'rgba(0,255,159,0.08)',
+    '--warn':'#ffe600','--warn-bg':'rgba(255,230,0,0.08)',
+    '--danger':'#ff2d78','--danger-bg':'rgba(255,45,120,0.08)',
+    '--info':'#b44fff','--info-bg':'rgba(180,79,255,0.08)',
+    '--ekg-bg':'#000','--ekg-line':'#00e5ff',
+    '--radius':'8px','--radius-lg':'12px',
+    '--font':"'Courier New', monospace",'--font-size':'13px',
+  },
+  'minimal-grey': {
+    '--bg':'#fafafa','--surface':'#ffffff','--surface-2':'#f5f5f5',
+    '--border':'rgba(0,0,0,0.06)','--border-md':'rgba(0,0,0,0.10)',
+    '--text':'#1a1a1a','--text-2':'#555555','--text-3':'#aaaaaa',
+    '--accent':'#555555','--accent-bg':'#f0f0f0','--accent-text':'#222222',
+    '--success':'#2e7d32','--success-bg':'#f1f8e9',
+    '--warn':'#e65100','--warn-bg':'#fff3e0',
+    '--danger':'#b71c1c','--danger-bg':'#ffebee',
+    '--info':'#0277bd','--info-bg':'#e1f5fe',
+    '--ekg-bg':'#1a1a1a','--ekg-line':'#aaaaaa',
+    '--radius':'8px','--radius-lg':'12px',
+    '--font':'system-ui, -apple-system, sans-serif','--font-size':'13px',
+  },
+};
+
+function applySkin(name) {
+  const vars = SKINS[name];
+  if (!vars) return;
+  const root = document.documentElement;
+  for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+  // Re-init charts so chart colours update
+  if (STATE.mode === 'demo') {
+    initCharts(getDemoData());
+  }
+}
+
+/* ================================================================
+   DEMO DATA (used when mode = 'demo')
+   ================================================================ */
+function getDemoData() {
+  const today = Date.now();
+  const daysAgo = d => new Date(today - d * 86400000).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'});
+
+  return {
+    stats: { sent: 146933, contacted: 69628, newContacts: 64525, leadsGenerated: 927 },
+    rates: { ooo: '2.2%', oooN: '1,535 replies', reply: '1.9%', replyN: '1,298 replies', positive: '71.4%', bounce: '0.9%', bounceN: '1,378 bounces' },
+    campaigns: [
+      { name: 'CK Engineering',           status: 'live',      sent: 41204, rrate: '2.1%', replies: 865, leads: 512, bounced: 14 },
+      { name: 'Manufacturing Oct 28 2025', status: 'live',      sent: 28817, rrate: '1.7%', replies: 490, leads: 318, bounced: 8  },
+      { name: 'Industrials Q1',            status: 'paused',    sent: 14211, rrate: '1.4%', replies: 199, leads: 97,  bounced: 3  },
+      { name: 'Sabre Relaunch',            status: 'paused',    sent: 9800,  rrate: '1.1%', replies: 108, leads: 52,  bounced: 2  },
+      { name: 'Tech Components Feb',       status: 'completed', sent: 22400, rrate: '2.3%', replies: 515, leads: 280, bounced: 11 },
+      { name: 'Precision Parts Q4',        status: 'completed', sent: 18600, rrate: '1.8%', replies: 335, leads: 190, bounced: 6  },
+      { name: 'Aerospace Mar 2026',        status: 'error',     sent: 3200,  rrate: '0.4%', replies: 13,  leads: 4,   bounced: 28 },
+    ],
+    prospects: [
+      { id:'1', name:'James Thornton',  company:'ABC Fabrications',   campaign:'CK Engineering',   firstReply: daysAgo(1),  days: 1,  stage:'Discovery',     stale: false, outreachStatus:'prospect' },
+      { id:'2', name:'Sarah Mitchell',  company:'Steelco Ltd',         campaign:'Mfg Oct 28',        firstReply: daysAgo(14), days: 14, stage:'Discovery',     stale: false, outreachStatus:'prospect' },
+      { id:'3', name:'David Park',      company:'Precision Mfg Co',    campaign:'CK Engineering',   firstReply: daysAgo(23), days: 23, stage:'Proposal sent', stale: false, outreachStatus:'proposal_sent' },
+      { id:'4', name:'Emma Clarke',     company:'Midland Tools',       campaign:'CK Engineering',   firstReply: daysAgo(58), days: 58, stage:'Discovery',     stale: true,  outreachStatus:'prospect' },
+    ],
+    // outreachStatus values here match CONFIG.hubspot.leadStatuses exactly.
+    // In live mode these come from HubSpot — demo data just pre-populates them.
+    leads: [
+      { id:'5',  name:'Robert Hayes',    email:'r.hayes@fordhameng.com',        company:'Fordham Engineering', campaign:'Mfg Oct 28',  date: daysAgo(4),  days: 4,  outreachStatus:'interested', steps:[{t:'sent',l:'Step 1'},{t:'sent',l:'Step 2'},{t:'replied',l:'Reply ✓'}] },
+      { id:'6',  name:'Lucy Andrews',    email:'l.andrews@avantmfg.com',        company:'Avant Mfg',           campaign:'CK Eng',       date: daysAgo(5),  days: 5,  outreachStatus:'interested', steps:[{t:'replied',l:'Reply ✓'}] },
+      { id:'7',  name:'Mark Jensen',     email:'m.jensen@nordicsteel.eu',       company:'Nordic Steel AS',     campaign:'Mfg Oct 28',  date: daysAgo(6),  days: 6,  outreachStatus:'interested', steps:[{t:'sent',l:'Step 1'},{t:'sent',l:'Step 2'},{t:'replied',l:'Reply ✓'}] },
+      { id:'8',  name:'Charlotte Webb',  email:'c.webb@mechanica.co.uk',        company:'Mechanica UK',        campaign:'CK Eng',       date: daysAgo(6),  days: 6,  outreachStatus:'interested', steps:[{t:'sent',l:'Step 1'},{t:'sent',l:'Step 2'},{t:'sent',l:'Step 3'},{t:'replied',l:'Reply ✓'}] },
+      { id:'9',  name:'Tom Briggs',      email:'t.briggs@briggsindustrial.com', company:'Briggs Industrial',   campaign:'Mfg Oct 28',  date: daysAgo(7),  days: 7,  outreachStatus:'interested', steps:[{t:'sent',l:'Step 1'},{t:'replied',l:'Reply ✓'}] },
+      { id:'10', name:'Nicole Ferraro',  email:'n.ferraro@ferraro-group.it',    company:'Ferraro Group',       campaign:'CK Eng',       date: daysAgo(7),  days: 7,  outreachStatus:'interested', steps:[{t:'sent',l:'Step 1'},{t:'sent',l:'Step 2'},{t:'replied',l:'Reply ✓'}] },
+      { id:'11', name:'Alex Schreiber',  email:'a.schreiber@deulmech.de',       company:'Deul Mech GmbH',      campaign:'Mfg Oct 28',  date: daysAgo(8),  days: 8,  outreachStatus:'interested', steps:[{t:'sent',l:'Step 1'},{t:'sent',l:'Step 2'},{t:'sent',l:'Step 3'},{t:'replied',l:'Reply ✓'}] },
+      { id:'12', name:'Priya Nair',      email:'p.nair@techfab.in',             company:'TechFab India',       campaign:'CK Eng',       date: daysAgo(9),  days: 9,  outreachStatus:'interested', steps:[{t:'sent',l:'Step 1'},{t:'replied',l:'Reply ✓'}] },
+      { id:'13', name:'Connor Walsh',    email:'c.walsh@atlanticeng.ie',        company:'Atlantic Engineering',campaign:'Mfg Oct 28',  date: daysAgo(10), days: 10, outreachStatus:'interested', steps:[{t:'sent',l:'Step 1'},{t:'sent',l:'Step 2'},{t:'replied',l:'Reply ✓'}] },
+      { id:'14', name:'Isabel Torres',   email:'i.torres@iberocast.es',         company:'IberoCast SL',        campaign:'CK Eng',       date: daysAgo(11), days: 11, outreachStatus:'interested', steps:[{t:'sent',l:'Step 1'},{t:'sent',l:'Step 2'},{t:'sent',l:'Step 3'},{t:'replied',l:'Reply ✓'}] },
+      { id:'15', name:'Ben Okafor',      email:'b.okafor@westafricamfg.com',    company:'West Africa Mfg',     campaign:'Mfg Oct 28',  date: daysAgo(12), days: 12, outreachStatus:'interested', steps:[{t:'sent',l:'Step 1'},{t:'replied',l:'Reply ✓'}] },
+      { id:'16', name:'Fiona MacDonald', email:'f.mac@highlandsteel.co.uk',     company:'Highland Steel',      campaign:'CK Eng',       date: daysAgo(13), days: 13, outreachStatus:'interested', steps:[{t:'sent',l:'Step 1'},{t:'sent',l:'Step 2'},{t:'replied',l:'Reply ✓'}] },
+      { id:'17', name:'Victor Petrov',   email:'v.petrov@slaviceng.com',        company:'Slavic Engineering',  campaign:'Mfg Oct 28',  date: daysAgo(20), days: 20, outreachStatus:'interested', steps:[{t:'sent',l:'Step 1'},{t:'sent',l:'Step 2'},{t:'sent',l:'Step 3'},{t:'replied',l:'Reply ✓'}] },
+      { id:'18', name:'Hannah Brooks',   email:'h.brooks@brooksmanuf.com',      company:'Brooks Manufacturing',campaign:'CK Eng',       date: daysAgo(27), days: 27, outreachStatus:'interested', steps:[{t:'sent',l:'Step 1'},{t:'replied',l:'Reply ✓'}] },
+      { id:'19', name:'Carlos Mendez',   email:'c.mendez@ibermach.es',          company:'IberMach SA',         campaign:'CK Eng',       date: daysAgo(39), days: 39, outreachStatus:'interested', steps:[{t:'sent',l:'Step 1'},{t:'sent',l:'Step 2'},{t:'sent',l:'Step 3'},{t:'replied',l:'Reply ✓'}] },
+    ],
+    chartLabels: ['12 Apr','13 Apr','14 Apr','15 Apr','16 Apr','17 Apr','18 Apr','19 Apr','20 Apr','21 Apr','22 Apr','23 Apr','24 Apr','25 Apr','26 Apr','27 Apr'],
+    newLeadData:  [9500,4800,3200,8800,5100,7200,4400,6100,8000,12500,9200,7800,11000,8400,9800,7100],
+    followupData: [8900,3800,2900,8200,4800,7000,4200,5900,7500,9800,8100,7200,8900,7100,8200,5900],
+    replyOOO:     [110,95,70,140,120,90,80,100,130,200,175,160,210,180,230,170],
+    replyCount:   [94,81,60,119,102,77,68,85,111,170,149,136,179,153,196,145],
+    positive:     [75,65,50,100,88,65,58,72,95,140,125,115,150,130,165,120],
+    bounces:      [12,8,6,15,11,9,7,10,13,18,16,14,20,17,19,14],
+    // Each dot = one positive reply. xi = index into chartLabels above.
+    // seg:'n' = dot sits on the New Lead bar half; seg:'f' = Follow-up bar half.
+    replyDots: [
+      { xi: 3,  seg: 'n', name: 'Robert Hayes' },
+      { xi: 5,  seg: 'n', name: 'Lucy Andrews' },
+      { xi: 7,  seg: 'f', name: 'Mark Jensen' },
+      { xi: 9,  seg: 'n', name: 'Charlotte Webb' },
+      { xi: 10, seg: 'f', name: 'Tom Briggs' },
+      { xi: 12, seg: 'n', name: 'Nicole Ferraro' },
+    ],
+    closed: [
+      { id:'20', name:'Greg Palmer',     email:'g.palmer@palmermfg.com',     company:'Palmer Mfg',         campaign:'CK Eng',      date: daysAgo(15), days: 15, outreachStatus:'not_now' },
+      { id:'21', name:'Diana Ross',      email:'d.ross@apextools.com',      company:'Apex Tools',          campaign:'Mfg Oct 28',  date: daysAgo(22), days: 22, outreachStatus:'not_interested' },
+      { id:'22', name:'Frank Miller',    email:'f.miller@steelworks.com',   company:'Steelworks Inc',      campaign:'CK Eng',      date: daysAgo(30), days: 30, outreachStatus:'not_a_fit' },
+      { id:'23', name:'Rita Chen',       email:'r.chen@pacificind.com',     company:'Pacific Industries',  campaign:'Mfg Oct 28',  date: daysAgo(45), days: 45, outreachStatus:'opted_out' },
+      { id:'24', name:'Mike Tanaka',     email:'m.tanaka@toyometal.jp',     company:'Toyo Metal Co',       campaign:'CK Eng',      date: daysAgo(60), days: 60, outreachStatus:'went_cold' },
+    ],
+  };
+}
+
+/* ================================================================
+   RENDER FUNCTIONS
+   ================================================================ */
+
+/* -- Stats cards -- */
+function renderStats(d) {
+  document.getElementById('stat-sent').textContent      = d.stats.sent.toLocaleString();
+  document.getElementById('stat-contacted').textContent = d.stats.contacted.toLocaleString();
+  document.getElementById('stat-new').textContent       = d.stats.newContacts.toLocaleString();
+  document.getElementById('stat-leads').textContent     = d.stats.leadsGenerated.toLocaleString();
+  document.getElementById('rate-ooo').textContent    = d.rates.ooo;
+  document.getElementById('rate-ooo-n').textContent  = d.rates.oooN;
+  document.getElementById('rate-reply').textContent  = d.rates.reply;
+  document.getElementById('rate-reply-n').textContent= d.rates.replyN;
+  document.getElementById('rate-pos').textContent    = d.rates.positive;
+  document.getElementById('rate-bounce').textContent = d.rates.bounce;
+  document.getElementById('rate-bounce-n').textContent= d.rates.bounceN;
+}
+
+/* -- Campaign table -- */
+let campAllData = [];
+function renderCampaigns(camps) {
+  campAllData = camps;
+  renderCampFilter();
+}
+function setCampFilter(f, btn) {
+  STATE.campFilter = f;
+  document.querySelectorAll('#campFilterBtns .btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderCampFilter();
+}
+function renderCampFilter() {
+  const rows = STATE.campFilter === 'all' ? campAllData : campAllData.filter(c => c.status === STATE.campFilter);
+  const statusHTML = { live: '<span class="status-live">Live</span>', paused: '<span class="status-paused">Paused</span>', completed: '<span class="status-completed">Completed</span>', error: '<span class="status-error">⚠ Error</span>' };
+  if (!rows.length) { document.getElementById('campBody').innerHTML = '<tr><td colspan="7" class="state-msg">No campaigns for this filter.</td></tr>'; return; }
+  document.getElementById('campBody').innerHTML = rows.map(c => `<tr>
+    <td title="${c.name}">${c.name}</td>
+    <td>${statusHTML[c.status] || c.status}</td>
+    <td class="r">${c.sent.toLocaleString()}</td>
+    <td class="r">${c.rrate}</td>
+    <td class="r">${c.replies.toLocaleString()}</td>
+    <td class="r"><span class="badge badge-green">${c.leads.toLocaleString()}</span></td>
+    <td class="r"><span class="badge ${c.bounced > 15 ? 'badge-red' : c.bounced > 8 ? 'badge-amber' : 'badge-grey'}">${c.bounced}</span></td>
+  </tr>`).join('');
+}
+
+/* -- Prospects table -- */
+function renderProspects(data) {
+  STATE.prospData = data;
+  renderProspRows();
+}
+function sortTable(table, col) {
+  if (table === 'prospects') {
+    if (STATE.prospSort.col === col) STATE.prospSort.asc = !STATE.prospSort.asc;
+    else { STATE.prospSort.col = col; STATE.prospSort.asc = true; }
+    renderProspRows();
+  } else if (table === 'closed') {
+    if (STATE.closedSort.col === col) STATE.closedSort.asc = !STATE.closedSort.asc;
+    else { STATE.closedSort.col = col; STATE.closedSort.asc = true; }
+    renderClosed();
+  } else {
+    if (STATE.leadsSort.col === col) STATE.leadsSort.asc = !STATE.leadsSort.asc;
+    else { STATE.leadsSort.col = col; STATE.leadsSort.asc = true; }
+    renderLeads();
+  }
+}
+function renderProspRows() {
+  const data = [...STATE.prospData];
+  if (STATE.prospSort.col) {
+    data.sort((a, b) => {
+      const v = typeof a[STATE.prospSort.col] === 'number' ? a[STATE.prospSort.col] - b[STATE.prospSort.col] : String(a[STATE.prospSort.col]).localeCompare(String(b[STATE.prospSort.col]));
+      return STATE.prospSort.asc ? v : -v;
+    });
+  }
+  document.getElementById('prospCount').textContent = data.length + ' prospect' + (data.length !== 1 ? 's' : '');
+  document.getElementById('prospBody').innerHTML = data.map(p => `<tr class="clickable">
+    <td><a href="https://app.hubspot.com/contacts/${p.id}" target="_blank" class="hs-badge">${ini(p.name)}</a></td>
+    <td>${p.name}</td>
+    <td>${p.company}</td>
+    <td style="color:var(--text-2);">${p.campaign}</td>
+    <td>${p.firstReply}</td>
+    <td><span class="${daysClass(p.days, 'prosp')}">${p.days}d</span></td>
+    <td><span class="badge ${p.stage === 'Proposal sent' ? 'badge-green' : 'badge-blue'}">${p.stage}</span></td>
+    <td>${statusBadge(p.outreachStatus)}</td>
+    <td>${moveToDropdown(p.id, p.outreachStatus, 'prospects')}</td>
+    <td>${p.stale ? '<span class="badge badge-stale">Stale</span>' : ''}</td>
+  </tr>`).join('');
+}
+
+/* -- Leads table -- */
+function renderLeads(data) {
+  if (data) STATE.leadsData = data;
+  const q = (document.getElementById('leadSearch').value || '').toLowerCase();
+  let rows = STATE.leadsData.filter(l => !q || l.name.toLowerCase().includes(q) || l.company.toLowerCase().includes(q) || l.campaign.toLowerCase().includes(q) || l.email.toLowerCase().includes(q));
+  if (STATE.leadsSort.col) {
+    rows.sort((a, b) => {
+      const v = typeof a[STATE.leadsSort.col] === 'number' ? a[STATE.leadsSort.col] - b[STATE.leadsSort.col] : String(a[STATE.leadsSort.col]).localeCompare(String(b[STATE.leadsSort.col]));
+      return STATE.leadsSort.asc ? v : -v;
+    });
+  }
+  STATE.leadsOpen = null;
+  document.getElementById('leadCount').textContent = rows.length + ' lead' + (rows.length !== 1 ? 's' : '');
+  document.getElementById('leadBody').innerHTML = rows.map((l, i) => `
+    <tr class="clickable" id="lr${i}" onclick="toggleJourney(${i},this,'${l.id}')">
+      <td><a href="https://app.hubspot.com/contacts/${l.id}" target="_blank" class="hs-badge" onclick="event.stopPropagation()">${ini(l.name)}</a></td>
+      <td title="${l.name}">${l.name}</td>
+      <td title="${l.email}" style="color:var(--info);font-size:11px;">${l.email}</td>
+      <td title="${l.company}">${l.company}</td>
+      <td style="color:var(--text-2);">${l.campaign}</td>
+      <td>${l.date}</td>
+      <td><span class="${daysClass(l.days, 'lead')}">${l.days}d</span></td>
+      <td>${statusBadge(l.outreachStatus)}</td>
+      <td onclick="event.stopPropagation()">${moveToDropdown(l.id, l.outreachStatus, 'leads')}</td>
+      <td style="color:var(--text-3); font-size:10px;" id="arr${i}">&#9654;</td>
+      <td></td>
+    </tr>
+    <tr class="journey-row" id="jtr${i}">
+      <td colspan="11"><div class="journey-inner" id="j${i}"></div></td>
+    </tr>
+  `).join('');
+  // store filtered rows so journey can reference them
+  STATE._displayedLeads = rows;
+}
+
+async function toggleJourney(i, row, contactId) {
+  const j = document.getElementById('j' + i);
+  const arr = document.getElementById('arr' + i);
+  if (STATE.leadsOpen === i) {
+    j.classList.remove('open');
+    row.classList.remove('row-active');
+    arr.textContent = '▶';
+    STATE.leadsOpen = null;
+    return;
+  }
+  if (STATE.leadsOpen !== null) {
+    const pj = document.getElementById('j' + STATE.leadsOpen);
+    const pr = document.getElementById('lr' + STATE.leadsOpen);
+    const pa = document.getElementById('arr' + STATE.leadsOpen);
+    if (pj) pj.classList.remove('open');
+    if (pr) pr.classList.remove('row-active');
+    if (pa) pa.textContent = '▶';
+  }
+  STATE.leadsOpen = i;
+  row.classList.add('row-active');
+  arr.textContent = '▼';
+
+  // Get steps — use cached if available, otherwise fetch
+  let steps = (STATE._displayedLeads[i] && STATE._displayedLeads[i].steps) || [];
+  if (!steps.length && STATE.mode === 'live') {
+    j.innerHTML = '<div class="journey-label">Loading journey...</div>';
+    j.classList.add('open');
+    try {
+      steps = await fetchContactJourney(contactId);
+      if (STATE._displayedLeads[i]) STATE._displayedLeads[i].steps = steps;
+    } catch(e) {
+      j.innerHTML = '<div class="journey-label" style="color:var(--danger)">Could not load journey from HubSpot.</div>';
+      return;
+    }
+  }
+  if (!steps.length) steps = [{ t: 'sent', l: 'Step 1' }, { t: 'replied', l: 'Reply ✓' }];
+
+  j.innerHTML = `
+    <div class="journey-label">HubSpot activity — sequence to first reply</div>
+    <div class="journey-steps">
+      ${steps.map((s, idx) => `
+        <div class="jstep"><div class="jicon ${s.t}">${s.t === 'replied' ? '↩' : '✉'}</div><div class="jlbl">${s.l}</div></div>
+        ${idx < steps.length - 1 ? '<span class="jarr">→</span>' : ''}
+      `).join('')}
+    </div>`;
+  j.classList.add('open');
+}
+
+/* ================================================================
+   CAMPAIGN SELECTOR & FILTERING
+   ================================================================ */
+function toggleCampaignSelector() {
+  const selector = document.getElementById('campaignSelector');
+  const text = document.getElementById('toggleSelectorText');
+  if (selector.classList.contains('collapsed')) {
+    selector.classList.remove('collapsed');
+    text.textContent = 'Collapse';
+  } else {
+    selector.classList.add('collapsed');
+    text.textContent = 'Expand';
+  }
+}
+
+function renderCampaignList(campaigns) {
+  STATE.allCampaigns = campaigns;
+  const container = document.getElementById('campaignList');
+  if (!campaigns.length) {
+    container.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-3);">No campaigns found.</div>';
+    return;
+  }
+
+  container.innerHTML = campaigns.map((c, idx) => `
+    <div class="campaign-item" onclick="toggleCampaignSelection(${idx}, event)">
+      <input 
+        type="checkbox" 
+        id="camp-${idx}" 
+        ${STATE.selectedCampaigns.includes(c.id || c.name) ? 'checked' : ''}
+        onclick="event.stopPropagation(); toggleCampaignSelection(${idx}, event)"
+      >
+      <div class="campaign-item-name">${c.name}</div>
+      <div class="campaign-item-meta">
+        <span class="badge badge-${c.status === 'live' ? 'green' : c.status === 'paused' ? 'blue' : 'gray'}">${c.status || 'live'}</span>
+        <span>${(c.sent || 0).toLocaleString()} sent</span>
+      </div>
+    </div>
+  `).join('');
+
+  updateSelectedCount();
+}
+
+function toggleCampaignSelection(idx, event) {
+  event.stopPropagation();
+  const campaign = STATE.allCampaigns[idx];
+  const campId = campaign.id || campaign.name;
+  const checkbox = document.getElementById(`camp-${idx}`);
+  
+  if (STATE.selectedCampaigns.includes(campId)) {
+    STATE.selectedCampaigns = STATE.selectedCampaigns.filter(id => id !== campId);
+    checkbox.checked = false;
+  } else {
+    STATE.selectedCampaigns.push(campId);
+    checkbox.checked = true;
+  }
+  
+  updateSelectedCount();
+}
+
+function selectAllCampaigns() {
+  const visible = getVisibleCampaigns();
+  visible.forEach(c => {
+    const campId = c.id || c.name;
+    if (!STATE.selectedCampaigns.includes(campId)) {
+      STATE.selectedCampaigns.push(campId);
+    }
+  });
+  renderCampaignList(STATE.allCampaigns);
+}
+
+function clearAllCampaigns() {
+  STATE.selectedCampaigns = [];
+  renderCampaignList(STATE.allCampaigns);
+}
+
+function getVisibleCampaigns() {
+  const searchTerm = (document.getElementById('campaignSearch').value || '').toLowerCase();
+  return STATE.allCampaigns.filter(c => 
+    !searchTerm || c.name.toLowerCase().includes(searchTerm)
+  );
+}
+
+function filterCampaignList() {
+  const visible = getVisibleCampaigns();
+  renderCampaignList(visible);
+}
+
+function updateSelectedCount() {
+  const count = STATE.selectedCampaigns.length;
+  const total = STATE.allCampaigns.length;
+  const label = count === 0 ? 'All campaigns' : 
+                count === total ? `All ${total} campaigns` :
+                `${count} of ${total} campaigns`;
+  document.getElementById('selectedCount').textContent = label + ' selected';
+}
+
+function updateInstantlyDays() {
+  const val = document.getElementById('instantlyDateFilter').value;
+  STATE.instantlyDays = val ? parseInt(val) : null;
+}
+
+function applyCampaignFilter() {
+  STATE.closedLeadsDays = parseInt(document.getElementById('dateRangeFilter').value);
+  updateInstantlyDays();
+  
+  // If no campaigns selected, default to all
+  if (STATE.selectedCampaigns.length === 0) {
+    STATE.selectedCampaigns = STATE.allCampaigns.map(c => c.id || c.name);
+  }
+  
+  // Collapse the selector after applying
+  const selector = document.getElementById('campaignSelector');
+  selector.classList.add('collapsed');
+  document.getElementById('toggleSelectorText').textContent = 'Expand';
+  
+  // Trigger full refresh with filters
+  refreshAll();
+}
+
+function getSelectedCampaignIds() {
+  if (!STATE.allCampaigns || STATE.allCampaigns.length === 0) return [];
+  if (STATE.selectedCampaigns.length === 0) return STATE.allCampaigns.map(c => c.id);
+  
+  return STATE.allCampaigns
+    .filter(c => STATE.selectedCampaigns.includes(c.id || c.name))
+    .map(c => c.id);
+}
+
+function getFilteredCampaignNames() {
+  // Return empty array (not null) when campaigns haven't loaded - this signals "skip campaign filter"
+  if (!STATE.allCampaigns || STATE.allCampaigns.length === 0) return [];
+  
+  // If nothing selected, return all campaign names (will be caught by length check in statusFilterGroups)
+  if (STATE.selectedCampaigns.length === 0) return STATE.allCampaigns.map(c => c.name);
+  
+  // Return selected campaigns
+  return STATE.allCampaigns
+    .filter(c => STATE.selectedCampaigns.includes(c.id || c.name))
+    .map(c => c.name);
+}
+
+/* -- Closed Leads table -- */
+function renderClosed(data) {
+  if (data) STATE.closedData = data;
+  const q = (document.getElementById('closedSearch').value || '').toLowerCase();
+  let rows = STATE.closedData.filter(l => !q || l.name.toLowerCase().includes(q) || l.company.toLowerCase().includes(q) || l.campaign.toLowerCase().includes(q) || l.email.toLowerCase().includes(q));
+  if (STATE.closedSort.col) {
+    rows.sort((a, b) => {
+      const v = typeof a[STATE.closedSort.col] === 'number' ? a[STATE.closedSort.col] - b[STATE.closedSort.col] : String(a[STATE.closedSort.col]).localeCompare(String(b[STATE.closedSort.col]));
+      return STATE.closedSort.asc ? v : -v;
+    });
+  }
+  document.getElementById('closedCount').textContent = rows.length + ' closed';
+  document.getElementById('closedBody').innerHTML = rows.length ? rows.map(l => `
+    <tr>
+      <td><a href="https://app.hubspot.com/contacts/${l.id}" target="_blank" class="hs-badge">${ini(l.name)}</a></td>
+      <td title="${l.name}">${l.name}</td>
+      <td title="${l.email}" style="color:var(--info);font-size:11px;">${l.email}</td>
+      <td title="${l.company}">${l.company}</td>
+      <td style="color:var(--text-2);">${l.campaign}</td>
+      <td>${l.date}</td>
+      <td><span class="${daysClass(l.days, 'lead')}">${l.days}d</span></td>
+      <td>${statusBadge(l.outreachStatus)}</td>
+      <td>${moveToDropdown(l.id, l.outreachStatus, 'closed')}</td>
+      <td></td>
+    </tr>
+  `).join('') : '<tr><td colspan="10" class="state-msg">No closed leads.</td></tr>';
+}
+
+/* -- Move-to dropdown builder -- */
+function moveToDropdown(contactId, currentStatus, sourceTable) {
+  const options = CONFIG.hubspot.manualStatuses
+    .filter(s => s !== currentStatus)
+    .map(s => {
+      const meta = CONFIG.hubspot.statusMeta[s];
+      return `<option value="${s}">${meta ? meta.label : s}</option>`;
+    });
+  return `<select class="move-select" onchange="changeContactStatus('${contactId}', this.value, '${sourceTable}'); this.selectedIndex=0;">
+    <option value="">Move to...</option>
+    ${options.join('')}
+  </select>`;
+}
+
+/* ================================================================
+   CHARTS
+   ================================================================ */
+let eChartInst = null;
+let mChartInst = null;
+
+function initCharts(d) {
+  const gc = 'rgba(128,128,128,0.08)';
+  const base = {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    plugins: { legend: { position: 'top', labels: { font: { size: 10 }, boxWidth: 10, padding: 8, color: getComputedStyle(document.documentElement).getPropertyValue('--text-2').trim() || '#888' } } },
+    scales: {
+      x: { ticks: { font: { size: 9 }, maxTicksLimit: 6 }, grid: { color: gc }, border: { color: gc } },
+      y: { ticks: { font: { size: 9 } }, grid: { color: gc }, border: { color: gc } }
+    }
+  };
+
+  // Build scatter points — one per positive reply, positioned at midpoint of the
+  // correct bar segment (new-lead half or follow-up half) so the dot sits ON that colour.
+  // d.replyDots = [{ xi: <label index>, seg: 'n'|'f', name: '<contact name>' }, ...]
+  const scatterPts = (d.replyDots || []).map(r => ({
+    x: r.xi,
+    y: r.seg === 'n'
+      ? Math.round(d.newLeadData[r.xi] / 2)
+      : Math.round(d.newLeadData[r.xi] + d.followupData[r.xi] / 2),
+    name: r.name,
+  }));
+
+  if (eChartInst) eChartInst.destroy();
+  eChartInst = new Chart(document.getElementById('eChart').getContext('2d'), {
+    data: {
+      labels: d.chartLabels,
+      datasets: [
+        // order 3 & 2 = drawn first (behind); order 1 = drawn last (in front)
+        { type: 'bar',     label: 'New lead',       data: d.newLeadData,  backgroundColor: '#93c5fd', stack: 's', order: 3 },
+        { type: 'bar',     label: 'Follow-up',      data: d.followupData, backgroundColor: '#3b82f6', stack: 's', order: 2 },
+        { type: 'scatter', label: 'Positive reply', data: scatterPts,
+          backgroundColor: '#16a34a', pointRadius: 4, pointHoverRadius: 6,
+          order: 1, z: 10 },
+      ]
+    },
+    options: {
+      ...base,
+      scales: { x: { ...base.scales.x, stacked: true }, y: { ...base.scales.y, stacked: true } },
+      plugins: {
+        ...base.plugins,
+        tooltip: { callbacks: {
+          label: ctx => ctx.dataset.type === 'scatter'
+            ? (ctx.raw.name || 'Positive reply')
+            : ctx.dataset.label + ': ' + Number(ctx.raw).toLocaleString(),
+        }},
+      },
+      onClick(_e, els) {
+        if (!els.length) return;
+        const ds = eChartInst.data.datasets[els[0].datasetIndex];
+        if (ds.type !== 'scatter') return;
+        const firstName = (ds.data[els[0].index].name || '').split(' ')[0];
+        if (!firstName) return;
+        const searchBox = document.getElementById('leadSearch');
+        searchBox.value = firstName;
+        renderLeads();
+        document.querySelector('[data-component="comp-leads"]')
+          .scrollIntoView({ behavior: 'smooth', block: 'start' });
+      },
+    },
+  });
+
+  if (mChartInst) mChartInst.destroy();
+  mChartInst = new Chart(document.getElementById('mChart').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: d.chartLabels,
+      datasets: [
+        { label: 'Reply (w/ OOO)', data: d.replyOOO,   borderColor: '#a78bfa', backgroundColor: '#a78bfa14', fill: true, tension: 0.4, borderWidth: 1.5, pointRadius: 0 },
+        { label: 'Reply count',    data: d.replyCount,  borderColor: '#60a5fa', backgroundColor: '#60a5fa14', fill: true, tension: 0.4, borderWidth: 1.5, pointRadius: 0 },
+        { label: 'Positive',       data: d.positive,    borderColor: '#34d399', backgroundColor: '#34d39914', fill: true, tension: 0.4, borderWidth: 1.5, pointRadius: 0 },
+        { label: 'Bounces',        data: d.bounces,     borderColor: '#fbbf24', backgroundColor: '#fbbf2414', fill: true, tension: 0.4, borderWidth: 1.5, pointRadius: 0 },
+      ]
+    },
+    options: base
+  });
+}
+
+function setMetricView(mode) {
+  STATE.metricView = mode;
+  document.getElementById('btnCount').classList.toggle('active', mode === 'count');
+  document.getElementById('btnPct').classList.toggle('active', mode === 'pct');
+  
+  if (!mChartInst || !STATE.dailyData) return;
+  
+  const d = STATE.dailyData;
+  const sent = d.newLeadData.map((n, i) => n + d.followupData[i]);
+  
+  if (mode === 'pct') {
+    // Convert counts to percentages
+    const replyOOOPct = d.replyOOO.map((v, i) => sent[i] > 0 ? (v / sent[i] * 100).toFixed(1) : 0);
+    const replyPct = d.replyCount.map((v, i) => sent[i] > 0 ? (v / sent[i] * 100).toFixed(1) : 0);
+    const positivePct = d.positive.map((v, i) => sent[i] > 0 ? (v / sent[i] * 100).toFixed(1) : 0);
+    const bouncesPct = d.bounces.map((v, i) => sent[i] > 0 ? (v / sent[i] * 100).toFixed(1) : 0);
+    
+    mChartInst.data.datasets[0].data = replyOOOPct;
+    mChartInst.data.datasets[1].data = replyPct;
+    mChartInst.data.datasets[2].data = positivePct;
+    mChartInst.data.datasets[3].data = bouncesPct;
+    mChartInst.options.scales.y.ticks.callback = v => v + '%';
+  } else {
+    // Use raw counts
+    mChartInst.data.datasets[0].data = d.replyOOO;
+    mChartInst.data.datasets[1].data = d.replyCount;
+    mChartInst.data.datasets[2].data = d.positive;
+    mChartInst.data.datasets[3].data = d.bounces;
+    mChartInst.options.scales.y.ticks.callback = v => v;
+  }
+  
+  mChartInst.update();
+}
+
+/* ================================================================
+   EKG ANIMATION
+   ================================================================ */
+function initEkg() {
+  const canvas = document.getElementById('ekgCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = 90, H = 90;
+  const pattern = [0,0,0,0,-7,-5,18,32,-20,-26,12,5,0,0,0,0,0,0,0,0,0,0];
+  const data = [];
+  let pi = 0;
+  for (let i = 0; i < W * 2; i++) { data.push(H / 2 + pattern[pi % pattern.length] * 0.8); pi++; }
+  let offset = 0;
+  function draw() {
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ekg-bg') || '#000';
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--ekg-line') || '#00e5ff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let x = 0; x < W; x++) {
+      const y = data[(x + offset) % data.length];
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    offset = (offset + 1) % data.length;
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+/* ================================================================
+   EXPORT CSV
+   ================================================================ */
+function exportCSV(type) {
+  let headers, rows;
+  if (type === 'leads') {
+    headers = ['Name', 'Email', 'Company', 'Campaign', 'Reply date', 'Days since reply', 'Status'];
+    rows = (STATE._displayedLeads || STATE.leadsData).map(l => [l.name, l.email, l.company, l.campaign, l.date, l.days + 'd', l.outreachStatus]);
+  } else if (type === 'closed') {
+    headers = ['Name', 'Email', 'Company', 'Campaign', 'Reply date', 'Days since reply', 'Status'];
+    rows = STATE.closedData.map(l => [l.name, l.email, l.company, l.campaign, l.date, l.days + 'd', l.outreachStatus]);
+  } else {
+    headers = ['Contact', 'Company', 'Campaign', 'First reply', 'Days in discovery', 'Deal stage', 'Status', 'Stale'];
+    rows = STATE.prospData.map(p => [p.name, p.company, p.campaign, p.firstReply, p.days + 'd', p.stage, p.outreachStatus, p.stale ? 'Yes' : 'No']);
+  }
+  const csv = [headers, ...rows].map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = type + '_export_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
+}
+
+/* ================================================================
+   HELPERS
+   ================================================================ */
+function ini(n) { return n.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase(); }
+
+// Renders a badge using HubSpot status metadata from CONFIG.
+// Passes through whatever value HubSpot returns — creates nothing new.
+function statusBadge(value) {
+  if (!value) return '';
+  const meta = CONFIG.hubspot.statusMeta[value];
+  if (meta) return `<span class="badge hs-st ${meta.css}">${meta.label}</span>`;
+  // Value exists in HubSpot but isn't in statusMeta yet — show raw value with fallback style
+  return `<span class="badge hs-st hs-unknown">${value}</span>`;
+}
+
+function daysClass(d, type) {
+  const warn  = type === 'lead' ? CONFIG.thresholds.leadWarnDays  : CONFIG.thresholds.prospWarnDays;
+  const danger = type === 'lead' ? CONFIG.thresholds.leadDangerDays : CONFIG.thresholds.prospDangerDays;
+  return d >= danger ? 'days-bad' : d >= warn ? 'days-warn' : 'days-ok';
+}
+
+function setConnectionStatus(live) {
+  document.getElementById('connDot').className = 'conn-dot' + (live ? ' live' : '');
+  if (!live) {
+    document.getElementById('connLabel').textContent = 'Demo mode';
+  } else {
+    const usingProxy = HS_BASE.includes('/proxy/');
+    if (usingProxy) {
+      document.getElementById('connLabel').textContent = 'Connected via proxy';
+    } else {
+      const parts = [];
+      if (STATE.apiKey) parts.push('HubSpot');
+      if (STATE.instantlyKey) parts.push('Instantly');
+      document.getElementById('connLabel').textContent = parts.length ? parts.join(' + ') : 'No keys';
+    }
+  }
+}
+
+function setLastUpdated() {
+  document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+/* ================================================================
+   REFRESH / INIT
+   ================================================================ */
+async function refreshAll() {
+  if (STATE.mode === 'demo') {
+    const d = getDemoData();
+    renderStats(d);
+    renderCampaigns(d.campaigns);
+    renderProspects(d.prospects);
+    renderLeads(d.leads);
+    renderClosed(d.closed);
+    initCharts(d);
+    setConnectionStatus(false);
+    setLastUpdated();
+    return;
+  }
+
+  // --- LIVE MODE ---
+  setConnectionStatus(true);
+
+  // Pull Instantly data (campaigns, stats, charts)
+  try {
+    const [camps, analytics, daily] = await Promise.all([
+      fetchInstantlyCampaigns(),
+      fetchInstantlyAnalytics(),
+      fetchInstantlyDailyData(),
+    ]);
+
+    if (camps.length) {
+      renderCampaigns(camps);
+      // Populate campaign selector on first load
+      if (STATE.allCampaigns.length === 0) {
+        renderCampaignList(camps);
+        // Default to all campaigns selected
+        STATE.selectedCampaigns = camps.map(c => c.id || c.name);
+        updateSelectedCount();
+      }
+    }
+
+    if (analytics) {
+      const replyRate = analytics.sent > 0 ? ((analytics.replyUnique / analytics.sent) * 100).toFixed(1) + '%' : '0%';
+      const replyOOORate = analytics.sent > 0 ? (((analytics.replyUnique + analytics.ooo) / analytics.sent) * 100).toFixed(1) + '%' : '0%';
+      const posRate = analytics.replyCount > 0 ? ((analytics.leadsGenerated / analytics.replyCount) * 100).toFixed(1) + '%' : '0%';
+      const bounceRate = analytics.sent > 0 ? ((analytics.bounceCount / analytics.sent) * 100).toFixed(1) + '%' : '0%';
+      renderStats({
+        stats: { sent: analytics.sent, contacted: analytics.contacted, newContacts: analytics.newContacts, leadsGenerated: analytics.leadsGenerated },
+        rates: {
+          ooo: replyOOORate, oooN: (analytics.replyUnique + analytics.ooo).toLocaleString() + ' replies',
+          reply: replyRate, replyN: analytics.replyUnique.toLocaleString() + ' replies',
+          positive: posRate,
+          bounce: bounceRate, bounceN: analytics.bounceCount.toLocaleString() + ' bounces',
+        }
+      });
+    }
+
+    if (daily) {
+      STATE.dailyData = daily;  // Store for Count/% toggle
+      initCharts({
+        chartLabels: daily.labels,
+        newLeadData: daily.newLeadData,
+        followupData: daily.followupData,
+        replyOOO: daily.replyOOO,
+        replyCount: daily.replyCount,
+        positive: daily.positive,
+        bounces: daily.bounces,
+        replyDots: [],
+      });
+    }
+  } catch (err) {
+    console.warn('Instantly data fetch failed:', err);
+    const d = getDemoData();
+    renderStats(d);
+    renderCampaigns(d.campaigns);
+    initCharts(d);
+  }
+
+  // Pull HubSpot data (leads, prospects, closed)
+  try {
+    if (STATE.lastRefresh) {
+      const changed = await fetchChangedContacts(STATE.lastRefresh);
+      if (changed.length > 0) {
+        applyChangedContacts(changed);
+      }
+    } else {
+      STATE.leadsData  = await fetchLeadsFromHS();
+      STATE.prospData  = await fetchProspectsFromHS();
+      STATE.closedData = await fetchClosedFromHS();
+    }
+
+    renderLeads();
+    renderProspRows();
+    renderClosed();
+    STATE.lastRefresh = new Date().toISOString();
+  } catch (err) {
+    console.error('HubSpot fetch error:', err);
+    document.getElementById('leadBody').innerHTML   = `<tr><td colspan="11" class="state-msg error">Could not load from HubSpot: ${err.message}</td></tr>`;
+    document.getElementById('prospBody').innerHTML  = `<tr><td colspan="10" class="state-msg error">Could not load from HubSpot: ${err.message}</td></tr>`;
+    document.getElementById('closedBody').innerHTML = `<tr><td colspan="10" class="state-msg error">Could not load from HubSpot: ${err.message}</td></tr>`;
+  }
+
+  setLastUpdated();
+}
+
+function launchDashboard() {
+  document.getElementById('dashboard').style.display = 'block';
+  initEkg();
+  refreshAll();
+  if (CONFIG.autoRefreshMinutes > 0) {
+    setInterval(refreshAll, CONFIG.autoRefreshMinutes * 60 * 1000);
+  }
+}
+
+</script>
+</body>
+</html>
