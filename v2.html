@@ -5,24 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RWT Outreach</title>
 <!--
-RWT OUTREACH DASHBOARD (Salesforge + HubSpot), file version v6
+RWT OUTREACH DASHBOARD (Salesforge + HubSpot), file version v9
 
 How it works
   - The page holds no API keys. Every request goes to the outreach-sync server on Railway,
-    which checks the dashboard password (sent as the x-dashboard-key header) and holds the
-    Salesforge and HubSpot keys.
+    which checks the dashboard password (x-dashboard-key header) and holds the Salesforge
+    and HubSpot keys. HubSpot is the only place anything is stored.
   - "Preview with demo data" runs the whole page on made-up numbers, no server needed.
 
-Server routes this page expects (see DASHBOARD_API_BRIEF.md)
+Server routes this page expects (see DASHBOARD_API_BRIEF_v5.md)
   GET   /dashboard/ping
-  GET   /dashboard/daily?from=YYYY-MM-DD&to=YYYY-MM-DD
-  GET   /dashboard/replies?from=YYYY-MM-DD&to=YYYY-MM-DD
-  PATCH /dashboard/contacts/:hubspotId/status   body {"status": "interested"}
+  GET   /dashboard/daily?from&to
+  GET   /dashboard/replies?from&to              rows include wasLead
+  PATCH /dashboard/contacts/:hubspotId/status   {"status": "interested" | ... | "prospect", "reconnectAt": "YYYY-MM-DD" (with not_now)}
+  POST  /dashboard/contacts/:hubspotId/followups {"dueAt": "YYYY-MM-DD"}
+  GET   /dashboard/pipeline
+  GET   /dashboard/prospects?include=all
+  PATCH /dashboard/deals/:dealId/stage          {"stageId": "...", "reconnectAt": "YYYY-MM-DD"}
+  POST  /dashboard/deals/:dealId/followups      {"dueAt": "YYYY-MM-DD", "note": "..."}
 -->
 <style>
 :root{
   --bg:#f4f4f2; --surface:#ffffff; --surface-2:#f8f8f6; --border:rgba(0,0,0,0.08); --border-md:rgba(0,0,0,0.15);
-  --text:#1b1b1a; --text-2:#55534e; --text-3:#8a8882; --navy:#1f2a44; --accent:#1f2a44;
+  --text:#1b1b1a; --text-2:#55534e; --text-3:#8a8882; --navy:#1f2a44;
   --danger:#c0392b; --radius:8px; --radius-lg:12px;
   --font:Calibri,'Segoe UI',system-ui,-apple-system,sans-serif;
 }
@@ -33,10 +38,10 @@ select,input{height:32px;padding:0 8px;border:1px solid var(--border-md);border-
 button{cursor:pointer}
 .btn{height:32px;padding:0 12px;border:1px solid var(--border-md);border-radius:var(--radius);background:var(--surface);color:var(--text-2)}
 .btn:hover{background:var(--surface-2)}
+.btn-sm{height:26px;padding:0 9px;font-size:12px}
 .btn-primary{background:var(--navy);color:#fff;border-color:var(--navy);width:100%;height:38px}
 .btn-primary:hover{opacity:.92;background:var(--navy)}
 
-/* Gate */
 .gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
 .gate-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:36px;width:100%;max-width:360px;text-align:center}
 .gate-card h1{font-size:20px;color:var(--navy);margin-bottom:4px}
@@ -45,7 +50,6 @@ button{cursor:pointer}
 .gate-err{color:var(--danger);font-size:12px;min-height:18px;margin-top:8px}
 .link-btn{background:none;border:none;color:var(--text-2);font-size:12px;margin-top:10px;text-decoration:underline}
 
-/* Layout */
 #app{display:none}
 header{background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
 .hdr{max-width:1280px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
@@ -55,11 +59,14 @@ main{max-width:1280px;margin:0 auto;padding:20px 24px 40px;display:flex;flex-dir
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px 20px}
 .demo-banner{background:#fff6e5;color:#7a4b00;border:1px solid #f3d9a4;border-radius:var(--radius);padding:8px 12px;font-size:13px;display:none}
 
-/* Tally */
-.tot-row{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
-.tot-num{font-size:34px;font-weight:600;color:var(--navy);line-height:1}
-.tally{display:flex;flex-wrap:wrap;gap:6px 22px;margin-top:12px}
-.tl{font-size:14px;color:var(--text-2)}
+/* Funnel + tally */
+.funnel{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
+.fstep{display:flex;flex-direction:column;gap:2px;min-width:110px}
+.fstep .n{font-size:32px;font-weight:600;color:var(--navy);line-height:1}
+.fstep .l{font-size:13px;color:var(--text-2)}
+.farrow{color:var(--text-3);font-size:22px;line-height:1}
+.tally{display:flex;flex-wrap:wrap;gap:6px 22px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+.tl{font-size:13px;color:var(--text-2)}
 .tl b{color:var(--text);margin-left:5px}
 
 /* Chart + day panel */
@@ -68,6 +75,8 @@ main{max-width:1280px;margin:0 auto;padding:20px 24px 40px;display:flex;flex-dir
 .lg span{display:flex;align-items:center;gap:6px}
 .sq{width:11px;height:11px;border-radius:2px;display:inline-block}
 .dot{width:11px;height:11px;border-radius:50%;display:inline-block;flex:none;box-shadow:0 0 0 1.5px #fff,0 0 0 2px rgba(0,0,0,0.08)}
+.chart-wrap{background:linear-gradient(180deg,#0f2757 0%,#0a1b40 100%);border-radius:var(--radius);padding:14px 14px 8px}
+.chart-wrap .lg{color:rgba(255,255,255,0.78)}
 .chart-box{position:relative;height:330px;cursor:pointer}
 .day{background:var(--surface-2);border-radius:var(--radius);padding:14px;min-width:0;display:flex;flex-direction:column;max-height:380px}
 .day h3{font-size:16px;color:var(--navy)}
@@ -77,16 +86,43 @@ main{max-width:1280px;margin:0 auto;padding:20px 24px 40px;display:flex;flex-dir
 .day-row .co{font-size:12px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tag{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--surface);border:1px solid var(--border);color:var(--text-2);white-space:nowrap}
 
-/* Master table */
-.tbl-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+/* Tables */
+.tbl-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
 .tbl-head h2{font-size:16px;color:var(--navy);margin-right:auto}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.chip{height:28px;padding:0 11px;border:1px solid var(--border-md);border-radius:14px;background:var(--surface);color:var(--text-2);font-size:12px}
+.chip.on{background:var(--navy);border-color:var(--navy);color:#fff}
 .tbl-wrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
-th{font-weight:600;color:var(--text-2);text-align:left;padding:8px;border-bottom:1px solid var(--border);font-size:12px;white-space:nowrap;cursor:pointer;user-select:none}
-th.nosort{cursor:default}
-td{padding:8px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:900px}
+th{font-weight:600;color:var(--text-2);text-align:left;padding:8px;border-bottom:1px solid var(--border);font-size:12px;white-space:nowrap}
+td{padding:8px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;vertical-align:middle}
 tr:last-child td{border-bottom:none}
+tr.dim td{color:var(--text-3)}
 td select{height:28px;font-size:12px}
+.av{display:inline-flex;width:28px;height:20px;border-radius:4px;background:#F5C4B3;color:#712B13;font-size:10px;font-weight:700;align-items:center;justify-content:center;margin-right:8px;flex:none}
+.who{display:flex;align-items:center;min-width:0}
+.who .sub{font-size:11px;color:var(--text-3)}
+.pill{display:inline-block;font-size:11px;padding:2px 9px;border-radius:10px;white-space:nowrap}
+.p-open{background:#EAF3DE;color:#27500A}.p-later{background:#FAEEDA;color:#633806}.p-un{background:#F1EFE8;color:#444441}
+.p-pros{background:#E6F1FB;color:#0C447C}.p-won{background:#EEEDFE;color:#3C3489}.p-lost{background:#FCEBEB;color:#791F1F}
+.p-src{background:#F1EFE8;color:#444441}
+.days{font-weight:600}.g{color:#3B6D11}.a{color:#854F0B}.r{color:#A32D2D}
+.stale{font-size:10px;padding:1px 6px;border:1px solid #EF9F27;color:#854F0B;border-radius:8px;margin-left:5px;font-weight:600}
+.journey{display:flex;align-items:center;gap:3px}
+.ji{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;border:1.5px solid #B4B2A9;color:#888780;background:#fff;flex:none}
+.ji svg{width:12px;height:12px}
+.ji.hit{border-color:transparent;color:#fff}
+.ji.more{font-size:10px;width:auto;padding:0 5px;border-radius:10px}
+.jsep{width:6px;height:1.5px;background:#D3D1C7;flex:none}
+.fu{display:flex;align-items:center;gap:6px}
+.presets{display:inline-flex;align-items:center;gap:2px;font-size:12px;color:var(--text-3)}
+.preset{background:none;border:none;color:var(--text-2);font-size:12px;text-decoration:underline;padding:0 5px;height:28px}
+.preset:hover{color:var(--navy)}
+.chipsep{width:1px;height:20px;background:var(--border-md);margin:0 6px;align-self:center}
+.chip .c{opacity:.65;margin-left:5px}
+.noplan{font-size:10px;padding:1px 6px;border:1px solid #EF9F27;color:#854F0B;border-radius:8px;font-weight:600}
+.fu input[type=date]{height:26px;font-size:12px;padding:0 4px}
+.over{color:#A32D2D;font-weight:600}
 .hs{display:inline-flex;align-items:center;justify-content:center;background:#ff7a59;color:#fff;font-size:10px;font-weight:700;padding:3px 6px;border-radius:4px;text-decoration:none}
 .empty{text-align:center;color:var(--text-3);padding:24px}
 .saving{opacity:.5}
@@ -97,6 +133,7 @@ td select{height:28px;font-size:12px}
   .split{grid-template-columns:minmax(0,1fr)}
   .hdr,main{padding-left:16px;padding-right:16px}
   .chart-box{height:260px}
+  .fstep .n{font-size:26px}
 }
 </style>
 </head>
@@ -120,7 +157,7 @@ td select{height:28px;font-size:12px}
   <header>
     <div class="hdr">
       <h1>RWT Outreach</h1>
-      <select id="range" aria-label="Chart date range">
+      <select id="range" aria-label="Date range for the numbers and chart">
         <option value="7">Last 7 days</option>
         <option value="14">Last 14 days</option>
         <option value="30" selected>Last 30 days</option>
@@ -135,26 +172,22 @@ td select{height:28px;font-size:12px}
   </header>
 
   <main>
-    <div class="demo-banner" id="demoBanner">Demo data. Nothing here is real and status changes are not saved.</div>
+    <div class="demo-banner" id="demoBanner">Demo data. Nothing here is real and nothing is saved to HubSpot.</div>
 
     <section class="panel">
-      <div class="tot-row">
-        <span class="muted" style="font-size:14px;color:var(--text-2)">Total replies</span>
-        <span class="tot-num" id="tot">0</span>
-        <span class="muted" id="totSub"></span>
-      </div>
+      <div class="funnel" id="funnel"></div>
       <div class="tally" id="tally"></div>
     </section>
 
     <section class="panel">
       <div class="split">
-        <div style="min-width:0">
+        <div class="chart-wrap" style="min-width:0">
           <div class="lg">
-            <span><span class="sq" style="background:rgba(44,44,42,0.14);border:1px solid #2C2C2A"></span>Total sent</span>
-            <span><span class="sq" style="background:#5F5E5A"></span>Email</span>
-            <span><span class="sq" style="background:#C9C7BE"></span>LinkedIn</span>
-            <span><span class="dot" style="background:#FF7A1A"></span>Email reply</span>
-            <span><span class="dot" style="background:#84CC16"></span>LinkedIn reply</span>
+            <span><span class="sq" style="background:linear-gradient(180deg,#4f9bff,#1a4fb0);border:1px solid #6CB4FF"></span>Total sent</span>
+            <span><span class="sq" style="background:rgba(255,255,255,0.6)"></span>Email</span>
+            <span><span class="sq" style="background:rgba(255,255,255,0.25)"></span>LinkedIn</span>
+            <span><span class="dot" style="background:#FF7A1A;box-shadow:0 0 0 1.5px #0f2757"></span>Email reply</span>
+            <span><span class="dot" style="background:#84CC16;box-shadow:0 0 0 1.5px #0f2757"></span>LinkedIn reply</span>
           </div>
           <div class="chart-box">
             <canvas id="chart" role="img" aria-label="Daily messages sent by email and LinkedIn, with replies shown as dots">Daily messages sent and replies.</canvas>
@@ -170,7 +203,29 @@ td select{height:28px;font-size:12px}
 
     <section class="panel">
       <div class="tbl-head">
-        <h2 id="tblTitle">Leads</h2>
+        <h2 id="proTitle">Prospects</h2>
+        <span class="muted">BD pipeline in HubSpot</span>
+      </div>
+      <div class="chips" id="proChips"></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:21%">Company</th>
+            <th style="width:17%">Stage</th>
+            <th style="width:9%">In stage</th>
+            <th style="width:12%">Source</th>
+            <th style="width:22%">Journey to prospect</th>
+            <th style="width:15%">Follow-up</th>
+            <th style="width:4%"></th>
+          </tr></thead>
+          <tbody id="proBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="tbl-head">
+        <h2 id="leadTitle">Leads generated</h2>
         <select id="fTime" aria-label="Table time period">
           <option value="7">Last 7 days</option>
           <option value="30" selected>Last 30 days</option>
@@ -180,7 +235,6 @@ td select{height:28px;font-size:12px}
           <option value="all">All time</option>
         </select>
         <input id="fQ" placeholder="Search name or company" style="width:190px" aria-label="Search">
-        <select id="fSt" aria-label="Status filter"></select>
         <select id="fCh" aria-label="Channel filter">
           <option value="all">All channels</option>
           <option value="email">Email</option>
@@ -189,18 +243,20 @@ td select{height:28px;font-size:12px}
         <select id="fSeq" aria-label="Sequence filter"><option value="all">All sequences</option></select>
         <button class="btn" id="csvBtn">Export CSV</button>
       </div>
+      <div class="chips" id="leadChips"></div>
       <div class="tbl-wrap">
         <table>
           <thead><tr>
-            <th data-k="repliedAt" style="width:11%">Replied</th>
-            <th data-k="name" style="width:17%">Name</th>
-            <th data-k="company" style="width:20%">Company</th>
-            <th data-k="sequenceName" style="width:17%">Sequence</th>
-            <th data-k="channel" style="width:11%">Channel</th>
-            <th class="nosort" style="width:18%">Status</th>
-            <th class="nosort" style="width:6%"></th>
+            <th style="width:8%">Replied</th>
+            <th style="width:20%">Name</th>
+            <th style="width:15%">Sequence</th>
+            <th style="width:9%">Channel</th>
+            <th style="width:6%">Days</th>
+            <th style="width:18%">Status</th>
+            <th style="width:18%">Follow-up</th>
+            <th style="width:4%"></th>
           </tr></thead>
-          <tbody id="tbody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+          <tbody id="leadBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -217,38 +273,41 @@ const CONFIG = {
   hubspotPortalId: '21247897',
   autoRefreshMinutes: 5,
   colors: {
-    emailBar: '#5F5E5A', linkedinBar: '#C9C7BE',
-    emailDot: '#FF7A1A', linkedinDot: '#84CC16',
-    area: '#2C2C2A', areaFill: 'rgba(44,44,42,0.10)',
-    grid: '#e6e5df', tick: '#8a8882', ring: '#ffffff'
+    emailBar: 'rgba(255,255,255,0.55)', linkedinBar: 'rgba(255,255,255,0.22)',
+    emailDot: '#FF7A1A', linkedinDot: '#84CC16', callDot: '#378ADD', meetingDot: '#7F77DD',
+    area: '#6CB4FF', areaFill: 'rgba(64,140,255,0.35)',
+    grid: 'rgba(255,255,255,0.08)', tick: 'rgba(255,255,255,0.62)', ring: '#0f2757'
   }
 };
 
-/* HubSpot outreach_contact_status values. "editable" = shown in the row dropdown. */
+/* Outreach Contact Status. group: open (lead to work), converted (became a prospect), out (qualified out).
+   pick: shown in the leads table dropdown. */
 const STATUS = {
-  interested:     { label: 'Interested',      lead: true,  editable: true },
-  prospect:       { label: 'Prospect',        lead: true,  editable: true },
-  proposal_sent:  { label: 'Proposal sent',   lead: true,  editable: true },
-  client:         { label: 'Client',          lead: true,  editable: true },
-  not_now:        { label: 'Not now',         lead: true,  editable: true },
-  went_cold:      { label: 'Went cold',       lead: true,  editable: true },
-  not_a_fit:      { label: 'Not a fit',       lead: true,  editable: true },
-  unlabeled:      { label: 'Unlabeled',       lead: true,  editable: false },
-  past_engagement:{ label: 'Past engagement', lead: false, editable: false },
-  wrong_contact:  { label: 'Wrong contact',   lead: false, editable: true },
-  not_interested: { label: 'Not interested',  lead: false, editable: true },
-  opted_out:      { label: 'Opted out',       lead: false, editable: true }
+  unlabeled:       { label: 'Unlabeled',        group: 'open',      pill: 'p-un',    pick: false },
+  interested:      { label: 'Interested',       group: 'open',      pill: 'p-open',  pick: true },
+  not_now:         { label: 'Reconnect later',  group: 'open',      pill: 'p-later', pick: true },
+  went_cold:       { label: 'Went cold',        group: 'out',       pill: 'p-lost',  pick: true },
+  not_a_fit:       { label: 'Not a fit',        group: 'out',       pill: 'p-lost',  pick: true },
+  wrong_contact:   { label: 'Wrong contact',    group: 'out',       pill: 'p-lost',  pick: true },
+  not_interested:  { label: 'Not interested',   group: 'out',       pill: 'p-lost',  pick: true },
+  opted_out:       { label: 'Opted out',        group: 'out',       pill: 'p-lost',  pick: true },
+  prospect:        { label: 'Prospect',         group: 'converted', pill: 'p-pros',  pick: true },
+  client:          { label: 'Client',           group: 'converted', pill: 'p-won',   pick: false },
+  previous_prospect:{ label: 'Previous prospect', group: 'converted', pill: 'p-lost', pick: false },
+  proposal_sent:   { label: 'Proposal sent',    group: 'converted', pill: 'p-pros',  pick: false },
+  past_engagement: { label: 'Past engagement',  group: 'out',       pill: 'p-un',    pick: false }
 };
-/* A reply whose HubSpot status is one of these has not been labeled yet. */
 const UNLABELED_RAW = ['', 'no_reply', 'in_sequence', 'replied_unclassified', 'never-contacted'];
-const TALLY_ORDER = ['interested','not_now','prospect','proposal_sent','client','went_cold','past_engagement','unlabeled','wrong_contact','not_interested','not_a_fit','opted_out','ooo'];
+const TALLY_ORDER = ['interested','not_now','unlabeled','prospect','client','previous_prospect','went_cold','not_a_fit','wrong_contact','not_interested','opted_out','ooo'];
 const TALLY_ALWAYS = ['interested','not_now','unlabeled','wrong_contact','not_interested','ooo'];
+const SOURCE = { outbound_email: 'Outbound: email', outbound_linkedin: 'Outbound: LinkedIn', outbound_cold_call: 'Outbound: cold call',
+  inbound_website: 'Inbound: website', inbound_referral: 'Inbound: referral', event: 'Event', other: 'Other' };
 
 /* ================= STATE ================= */
 const S = {
   mode: 'demo', key: null,
-  daily: [], chartReplies: [], tableReplies: [],
-  selectedDay: null, sort: { k: 'repliedAt', asc: false },
+  daily: [], chartReplies: [], tableReplies: [], stages: [], deals: [],
+  selectedDay: null, leadSel: null, proSel: null, pendingLong: null, pendingReconnect: null,
   timer: null
 };
 
@@ -259,7 +318,12 @@ const pad = n => String(n).padStart(2, '0');
 const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 const localDay = iso => ymd(new Date(iso));
 const fmtDay = s => { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+const fmtIso = iso => fmtDay(localDay(iso));
+/* The chart day a reply is drawn on: its own day, or the next sending day if it came in on a day with no sends. */
+function bucketDay(iso) { const d = localDay(iso); if (!S.daily.length) return d; const hit = S.daily.find(x => x.date >= d); return hit ? hit.date : S.daily[S.daily.length - 1].date; }
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const daysSince = iso => Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
+const initials = s => String(s || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
 
 function rangeFor(v) {
   const now = new Date(), to = ymd(now);
@@ -280,77 +344,134 @@ function statusKey(r) {
   if (UNLABELED_RAW.includes(raw)) return 'unlabeled';
   return STATUS[raw] ? raw : 'unlabeled';
 }
-function isLead(r) {
-  const k = statusKey(r);
-  if (k === 'ooo') return false;
-  return STATUS[k].lead;
-}
 const labelOf = k => k === 'ooo' ? 'Out of office' : STATUS[k].label;
+const groupOf = r => { const k = statusKey(r); return k === 'ooo' ? 'none' : STATUS[k].group; };
+const isLead = r => !r.ooo && r.wasLead === true;
 const dotColor = r => r.channel === 'linkedin' ? CONFIG.colors.linkedinDot : CONFIG.colors.emailDot;
 function toast(msg, err) {
   const t = $('toast'); t.textContent = msg; t.className = 'toast' + (err ? ' err' : ''); t.style.display = 'block';
   clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500);
 }
+const stageById = id => S.stages.find(s => s.id === String(id));
+const isParked = st => !!st && st.kind === 'open' && /long.?term/i.test(st.label);
 
 /* ================= API ================= */
 async function api(path, opts = {}) {
-  const r = await fetch(CONFIG.apiBase + path, {
-    ...opts,
-    headers: { 'Content-Type': 'application/json', 'x-dashboard-key': S.key, ...(opts.headers || {}) }
-  });
+  const r = await fetch(CONFIG.apiBase + path, { ...opts, headers: { 'Content-Type': 'application/json', 'x-dashboard-key': S.key, ...(opts.headers || {}) } });
   if (r.status === 401) { logout(); throw new Error('Session expired. Log in again.'); }
+  if (r.status === 409) throw new Error('This contact has opted out and can\'t be changed here.');
   if (!r.ok) throw new Error('Server error ' + r.status);
   return r.json();
 }
-async function getDaily(from, to) {
-  if (S.mode === 'demo') return DEMO.daily(from, to);
-  const d = await api(`/dashboard/daily?from=${from}&to=${to}`);
-  return d.days || [];
-}
-async function getReplies(from, to) {
-  if (S.mode === 'demo') return DEMO.replies(from, to);
-  const d = await api(`/dashboard/replies?from=${from}&to=${to}`);
-  return d.replies || [];
-}
-async function saveStatus(hubspotId, status) {
-  if (S.mode === 'demo') return { ok: true };
-  return api(`/dashboard/contacts/${encodeURIComponent(hubspotId)}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
-}
+const API = {
+  daily: (f, t) => S.mode === 'demo' ? DEMO.daily(f, t) : api(`/dashboard/daily?from=${f}&to=${t}`).then(d => d.days || []),
+  replies: (f, t) => S.mode === 'demo' ? DEMO.replies(f, t) : api(`/dashboard/replies?from=${f}&to=${t}`).then(d => d.replies || []),
+  pipeline: () => S.mode === 'demo' ? DEMO.pipeline() : api('/dashboard/pipeline'),
+  prospects: () => S.mode === 'demo' ? DEMO.prospects() : api('/dashboard/prospects?include=all').then(d => d.prospects || []),
+  setStatus: (id, status, reconnectAt) => S.mode === 'demo' ? DEMO.setStatus(id, status, reconnectAt) : api(`/dashboard/contacts/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: JSON.stringify({ status, reconnectAt }) }),
+  leadFollowup: (id, dueAt) => S.mode === 'demo' ? DEMO.leadFollowup(id, dueAt) : api(`/dashboard/contacts/${encodeURIComponent(id)}/followups`, { method: 'POST', body: JSON.stringify({ dueAt }) }),
+  setStage: (dealId, stageId, reconnectAt) => S.mode === 'demo' ? DEMO.setStage(dealId, stageId, reconnectAt) : api(`/dashboard/deals/${encodeURIComponent(dealId)}/stage`, { method: 'PATCH', body: JSON.stringify({ stageId, reconnectAt }) }),
+  followup: (dealId, dueAt) => S.mode === 'demo' ? DEMO.followup(dealId, dueAt) : api(`/dashboard/deals/${encodeURIComponent(dealId)}/followups`, { method: 'POST', body: JSON.stringify({ dueAt }) })
+};
 
 /* ================= DEMO DATA ================= */
 const DEMO = (() => {
-  const first = ['D.','K.','M.','T.','S.','R.','J.','A.','B.','P.','L.','E.','G.','H.','N.','C.','V.','W.','I.','O.','F.','Y.','Q.','U.'];
+  const first = ['Dan','Kiran','Marc','Tara','Sven','Rita','Jean','Anna','Bao','Paul','Luc','Erin','Gita','Hugh','Nils','Cody','Vera','Walt','Iris','Owen','Fay','Yuri','Quinn','Uma'];
   const last = ['Harper','Singh','Lavoie','Brandt','Olsen','Chen','Moreau','Kowal','Nguyen','Grant','Dube','Walsh','Patel','Ross','Berg','Fox','Hall','Stone','Park','Reid','Lang','Doyle','Adams','Ito'];
   const cos = ['Steel Fab','Electric','Hydrovac','Machining','Oilfield Services','Waste Services','Controls','Welding','Rentals','Environmental','Fabricators','Pipe Supply','Trucking','Coatings','Disposal','Hydraulics'];
   const seqs = [{ id: '55475', name: 'Manufacturing Q3' }, { id: '55480', name: 'Electrical contractors' }, { id: '55491', name: 'Energy services' }, { id: '55502', name: 'Environmental services' }];
-  const statuses = ['interested','interested','interested','not_now','not_now','','not_interested','not_interested','wrong_contact','prospect','client','opted_out'];
-  let seed = 7; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
-  const all = []; const today = new Date(); let id = 1000;
-  for (let i = 0; i < 200; i++) {
+  const pool = ['interested','interested','interested','interested','interested','not_now','not_now','not_now','','','','not_interested','not_interested','not_interested','not_interested',
+    'wrong_contact','wrong_contact','not_a_fit','not_a_fit','went_cold','went_cold','opted_out','prospect','prospect','previous_prospect'];
+  let seed = 11; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const today = new Date(); let id = 1000, did = 5000;
+  const stages = [
+    { id: '39985460', label: 'Prospect', order: 0, kind: 'open', staleDays: 14 },
+    { id: '39985461', label: 'Qualified', order: 1, kind: 'open', staleDays: 30 },
+    { id: '39985462', label: 'NDA Signed', order: 2, kind: 'open', staleDays: 30 },
+    { id: '1445440834', label: 'Financials Received', order: 3, kind: 'open', staleDays: 45 },
+    { id: '39985463', label: 'Valuation/Proposal', order: 4, kind: 'open', staleDays: 21 },
+    { id: '1176450616', label: 'Long Term Lead', order: 5, kind: 'open', staleDays: null },
+    { id: '39985465', label: 'Closed won', order: 6, kind: 'won', staleDays: null },
+    { id: '39985466', label: 'Closed lost', order: 7, kind: 'lost', staleDays: null },
+    { id: '1176450615', label: 'LOST - too small', order: 8, kind: 'lost', staleDays: null },
+    { id: '1445441551', label: 'LOST - Other Advisor', order: 9, kind: 'lost', staleDays: null },
+    { id: '1445441552', label: 'LOST - Valuation Gap', order: 10, kind: 'lost', staleDays: null },
+    { id: '1445441553', label: 'LOST - Fee', order: 11, kind: 'lost', staleDays: null }
+  ];
+  const replies = [], deals = [];
+  function journeyFor(r) {
+    const j = []; const end = new Date(r.repliedAt); const n = 1 + Math.floor(rnd() * 3);
+    for (let i = n; i >= 1; i--) j.push({ type: rnd() < 0.3 ? 'linkedin' : 'email', at: addDays(end, -i * 4).toISOString(), replied: false });
+    j.push({ type: r.channel, at: r.repliedAt, replied: true });
+    if (rnd() < 0.7) j.push({ type: 'call', at: addDays(end, 2).toISOString(), replied: rnd() < 0.8 });
+    if (rnd() < 0.3) j.push({ type: 'meeting', at: addDays(end, 5).toISOString(), replied: true });
+    return j;
+  }
+  function makeDeal(r, stageId, extra = {}) {
+    const created = addDays(new Date(r.repliedAt), 3);
+    const d = { dealId: String(did++), dealName: r.company, stageId, createdAt: created.toISOString(),
+      stageEnteredAt: addDays(created, Math.floor(rnd() * Math.max(1, daysSince(created.toISOString())))).toISOString(),
+      closedAt: null, source: r.channel === 'linkedin' ? 'outbound_linkedin' : 'outbound_email',
+      company: { id: 'c' + r.hubspotId, name: r.company }, contact: { hubspotId: r.hubspotId, name: r.name, email: '' },
+      nextTask: null, journey: journeyFor(r), ...extra };
+    const st = stages.find(s => s.id === stageId);
+    if (st.kind !== 'open') d.closedAt = d.stageEnteredAt;
+    if (isParked(st)) d.nextTask = { id: 't' + did, dueAt: addDays(today, 20 + Math.floor(rnd() * 120)).toISOString(), subject: 'Reconnect' };
+    else if (st.kind === 'open' && rnd() < 0.6) d.nextTask = { id: 't' + did, dueAt: addDays(today, Math.floor(rnd() * 20) - 6).toISOString(), subject: 'Follow up' };
+    deals.push(d); return d;
+  }
+  for (let i = 0; i < 220; i++) {
     const back = Math.floor(rnd() * 200);
     const d = addDays(today, -back); d.setHours(8 + Math.floor(rnd() * 9), Math.floor(rnd() * 60));
-    const ooo = rnd() < 0.14;
-    const ln = last[Math.floor(rnd() * last.length)];
-    const s = seqs[Math.floor(rnd() * seqs.length)];
-    all.push({
-      hubspotId: String(id++),
-      name: ooo ? 'Auto-reply' : first[Math.floor(rnd() * first.length)] + ' ' + ln,
-      company: ln + ' ' + cos[Math.floor(rnd() * cos.length)],
-      email: '', sequenceId: s.id, sequenceName: s.name,
-      channel: rnd() < 0.3 ? 'linkedin' : 'email',
-      repliedAt: d.toISOString(),
-      status: ooo ? 'not_now' : statuses[Math.floor(rnd() * statuses.length)],
-      ooo
-    });
+    const ooo = rnd() < 0.12;
+    const fn = pick(first), ln = pick(last), s = pick(seqs);
+    const status = ooo ? 'not_now' : (rnd() < 0.02 ? 'client' : pick(pool));
+    const r = { hubspotId: String(id++), name: ooo ? 'Auto-reply' : fn + ' ' + ln, company: ln + ' ' + pick(cos), email: '',
+      sequenceId: s.id, sequenceName: s.name, channel: rnd() < 0.3 ? 'linkedin' : 'email', repliedAt: d.toISOString(), status, ooo };
+    const g = STATUS[status] ? STATUS[status].group : 'open';
+    r.wasLead = !ooo && (g !== 'out' || ['went_cold', 'not_a_fit'].includes(status) || rnd() < 0.3) && status !== 'opted_out';
+    if (STATUS[status] && STATUS[status].group === 'open' && !ooo && rnd() < (status === 'not_now' ? 0.85 : 0.35)) r.nextTask = { id: 'lt' + r.hubspotId, dueAt: addDays(today, status === 'not_now' ? Math.floor(rnd() * 60) - 5 : Math.floor(rnd() * 14) - 4).toISOString(), subject: status === 'not_now' ? 'Reconnect' : 'Follow up' };
+    replies.push(r);
+    if (status === 'prospect') makeDeal(r, pick(['39985460','39985461','39985461','39985462','1445440834','39985463','1176450616']));
+    if (status === 'client') makeDeal(r, '39985465');
+    if (status === 'previous_prospect') makeDeal(r, pick(['1176450615','1445441551','1445441552','1445441553','39985466']));
   }
+  // Two non-outbound prospects so the source column shows the mix.
+  makeDeal({ hubspotId: '9001', name: 'Glen Archer', company: 'Archer Industrial', channel: 'email', repliedAt: addDays(today, -40).toISOString() }, '39985462', { source: 'outbound_cold_call', journey: [{ type: 'call', at: addDays(today, -44).toISOString(), replied: false }, { type: 'call', at: addDays(today, -40).toISOString(), replied: true }] });
+  makeDeal({ hubspotId: '9002', name: 'Maya Tran', company: 'Tran Coatings', channel: 'email', repliedAt: addDays(today, -12).toISOString() }, '39985461', { source: 'inbound_website', journey: [{ type: 'meeting', at: addDays(today, -10).toISOString(), replied: true }] });
+  const find = id => replies.find(x => x.hubspotId === id);
+  const syncContact = (d) => { const r = find(d.contact.hubspotId); if (!r) return; const st = stages.find(s => s.id === d.stageId); r.status = st.kind === 'won' ? 'client' : st.kind === 'lost' ? 'previous_prospect' : 'prospect'; r.wasLead = true; };
   return {
-    replies: (from, to) => all.filter(r => { const k = localDay(r.repliedAt); return k >= from && k <= to; }).map(r => ({ ...r })),
     daily: (from, to) => dayList(from, to).map(date => {
       const wd = new Date(date + 'T00:00:00').getDay(), weekend = wd === 0 || wd === 6;
       const h = [...date].reduce((a, c) => a + c.charCodeAt(0), 0);
-      return { date, emailSent: weekend ? 60 + h % 50 : 300 + h % 120, linkedinSent: weekend ? 10 + h % 15 : 55 + h % 45 };
+      return { date, emailSent: weekend ? 0 : 300 + h % 120, linkedinSent: weekend ? 0 : 55 + h % 45 };
     }),
-    setStatus: (id, st) => { const r = all.find(x => x.hubspotId === id); if (r) r.status = st; }
+    replies: (from, to) => replies.filter(r => { const k = localDay(r.repliedAt); return k >= from && k <= to; }).map(r => ({ ...r })),
+    pipeline: () => ({ pipelineId: '14943271', stages }),
+    prospects: () => deals.map(d => ({ ...d, journey: [...d.journey] })),
+    setStatus: (hid, status, reconnectAt) => {
+      const r = find(hid); if (!r) return { ok: true, status };
+      if (r.status === 'opted_out') throw new Error('This contact has opted out and can\'t be changed here.');
+      const wasLater = r.status === 'not_now';
+      r.status = status; if (STATUS[status].group !== 'out') r.wasLead = true;
+      if (status === 'not_now') r.nextTask = { id: 'lt' + Date.now(), dueAt: new Date((reconnectAt || ymd(addDays(new Date(), 60))) + 'T16:00:00').toISOString(), subject: 'Reconnect' };
+      else if (STATUS[status].group !== 'open' || wasLater) r.nextTask = null; /* auto-close BD queue tasks */
+      if (status === 'prospect' && !deals.some(d => d.contact.hubspotId === hid && stages.find(s => s.id === d.stageId).kind === 'open')) {
+        const d = makeDeal(r, '39985460'); d.createdAt = new Date().toISOString(); d.stageEnteredAt = d.createdAt; d.nextTask = null;
+        return { ok: true, status, dealId: d.dealId };
+      }
+      return { ok: true, status, nextTask: r.nextTask || null };
+    },
+    leadFollowup: (hid, dueAt) => { const r = find(hid); r.nextTask = { id: 'lt' + Date.now(), dueAt: new Date(dueAt + 'T16:00:00').toISOString(), subject: 'Follow up' }; return r.nextTask; },
+    setStage: (dealId, stageId, reconnectAt) => {
+      const d = deals.find(x => x.dealId === dealId); const st = stages.find(s => s.id === stageId);
+      d.stageId = stageId; d.stageEnteredAt = new Date().toISOString(); d.closedAt = st.kind === 'open' ? null : d.stageEnteredAt;
+      if (reconnectAt) d.nextTask = { id: 't' + Date.now(), dueAt: new Date(reconnectAt + 'T16:00:00').toISOString(), subject: 'Reconnect' };
+      syncContact(d); return { ...d };
+    },
+    followup: (dealId, dueAt) => { const d = deals.find(x => x.dealId === dealId); d.nextTask = { id: 't' + Date.now(), dueAt: new Date(dueAt + 'T16:00:00').toISOString(), subject: 'Follow up' }; return d.nextTask; }
   };
 })();
 
@@ -361,7 +482,7 @@ const dotsPlugin = {
   afterDatasetsDraw(ch) {
     const ctx = ch.ctx, meta = ch.getDatasetMeta(1), y0 = ch.scales.y.getPixelForValue(0);
     const byDay = {};
-    S.chartReplies.filter(r => !r.ooo).forEach(r => { (byDay[localDay(r.repliedAt)] ||= []).push(r); });
+    S.chartReplies.filter(r => !r.ooo).forEach(r => { (byDay[bucketDay(r.repliedAt)] ||= []).push(r); });
     S.daily.forEach((d, i) => {
       const bar = meta.data[i]; if (!bar) return;
       const list = byDay[d.date] || [];
@@ -377,25 +498,48 @@ const dotsPlugin = {
     });
   }
 };
-/* Soft highlight band behind the selected day, so bar colors stay true. */
 const selectPlugin = {
   id: 'selectedDay',
   beforeDatasetsDraw(ch) {
     const i = S.daily.findIndex(d => d.date === S.selectedDay); if (i < 0) return;
     const x = ch.scales.x, w = (x.getPixelForValue(1) - x.getPixelForValue(0)) || 20, cx = x.getPixelForValue(i);
     const { top, bottom } = ch.chartArea;
-    ch.ctx.save(); ch.ctx.fillStyle = 'rgba(31,42,68,0.07)';
-    ch.ctx.fillRect(cx - w / 2, top, w, bottom - top); ch.ctx.restore();
+    ch.ctx.save(); ch.ctx.fillStyle = 'rgba(255,255,255,0.08)'; ch.ctx.fillRect(cx - w / 2, top, w, bottom - top); ch.ctx.restore();
   }
 };
+/* Bars take their top edge from the total-sent curve: email is clipped to the curve, and the LinkedIn
+   segment is filled from the top of the email bar up to the curve. */
+function areaClip(ch) {
+  const pts = ch.getDatasetMeta(0).data, a = ch.chartArea, ctx = ch.ctx; if (!pts.length) return false;
+  ctx.beginPath(); ctx.moveTo(a.left, a.bottom); ctx.lineTo(a.left, pts[0].y); ctx.lineTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i - 1], c = pts[i];
+    if (p.cp2x !== undefined && c.cp1x !== undefined) ctx.bezierCurveTo(p.cp2x, p.cp2y, c.cp1x, c.cp1y, c.x, c.y); else ctx.lineTo(c.x, c.y);
+  }
+  const l = pts[pts.length - 1]; ctx.lineTo(a.right, l.y); ctx.lineTo(a.right, a.bottom); ctx.closePath(); ctx.clip(); return true;
+}
+const curvePlugin = {
+  id: 'curveBars',
+  beforeDatasetDraw(ch, args) {
+    if (args.index === 1) { ch.ctx.save(); areaClip(ch); }
+    if (args.index === 2) {
+      const ctx = ch.ctx, meta = ch.getDatasetMeta(2), top = ch.chartArea.top;
+      ctx.save(); areaClip(ch); ctx.fillStyle = CONFIG.colors.linkedinBar;
+      const em = ch.data.datasets[1].data, li = ch.data.datasets[2].data;
+      meta.data.forEach((b, i) => { if (!((em[i] || 0) + (li[i] || 0))) return; const w = b.width, base = b.base; if (base > top) ctx.fillRect(b.x - w / 2, top, w, base - top); });
+      ctx.restore(); return false;
+    }
+  },
+  afterDatasetDraw(ch, args) { if (args.index === 1) ch.ctx.restore(); }
+};
 function drawChart() {
-  const c = CONFIG.colors, labels = S.daily.map(d => fmtDay(d.date));
+  const c = CONFIG.colors;
   const data = {
-    labels,
+    labels: S.daily.map(d => fmtDay(d.date)),
     datasets: [
-      { type: 'line', label: 'Total sent', data: S.daily.map(d => d.emailSent + d.linkedinSent), borderColor: c.area, borderWidth: 1.5,
-        backgroundColor: ctx => { const a = ctx.chart.chartArea; if (!a) return c.areaFill; const g = ctx.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom); g.addColorStop(0, 'rgba(44,44,42,0.22)'); g.addColorStop(1, 'rgba(44,44,42,0.02)'); return g; },
-        fill: 'origin', tension: 0.45, capBezierPoints: true, pointRadius: 0, pointHoverRadius: 0, order: 3 },
+      { type: 'line', label: 'Total sent', data: S.daily.map(d => d.emailSent + d.linkedinSent), borderColor: c.area, borderWidth: 2.5,
+        backgroundColor: ctx => { const a = ctx.chart.chartArea; if (!a) return c.areaFill; const g = ctx.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom); g.addColorStop(0, 'rgba(79,155,255,0.62)'); g.addColorStop(0.6, 'rgba(38,98,214,0.32)'); g.addColorStop(1, 'rgba(20,60,160,0.06)'); return g; },
+        fill: 'origin', cubicInterpolationMode: 'monotone', capBezierPoints: true, pointRadius: 0, pointHoverRadius: 0, order: 3 },
       { type: 'bar', label: 'Email', data: S.daily.map(d => d.emailSent), backgroundColor: c.emailBar, stack: 's', barPercentage: 0.5, categoryPercentage: 0.9, maxBarThickness: 16, order: 2 },
       { type: 'bar', label: 'LinkedIn', data: S.daily.map(d => d.linkedinSent), backgroundColor: c.linkedinBar, stack: 's', borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: 'bottom', barPercentage: 0.5, categoryPercentage: 0.9, maxBarThickness: 16, order: 2 }
     ]
@@ -405,48 +549,42 @@ function drawChart() {
     data,
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          filter: t => t.datasetIndex > 0,
-          callbacks: {
-            afterBody: it => {
-              const day = S.daily[it[0].dataIndex].date;
-              const n = S.chartReplies.filter(r => !r.ooo && localDay(r.repliedAt) === day).length;
-              return n ? n + (n === 1 ? ' reply' : ' replies') : 'No replies';
-            }
-          }
-        }
-      },
+      plugins: { legend: { display: false }, tooltip: { filter: t => t.datasetIndex > 0, callbacks: { afterBody: it => {
+        const day = S.daily[it[0].dataIndex].date; const n = S.chartReplies.filter(r => !r.ooo && bucketDay(r.repliedAt) === day).length;
+        return n ? n + (n === 1 ? ' reply' : ' replies') : 'No replies'; } } } },
       scales: {
         x: { stacked: true, grid: { display: false }, ticks: { color: c.tick, font: { size: 11 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
         y: { stacked: true, beginAtZero: true, grace: '12%', grid: { color: c.grid }, border: { display: false }, ticks: { color: c.tick, font: { size: 11 } } }
       },
-      onClick: e => {
-        const i = Math.round(chart.scales.x.getValueForPixel(e.x));
-        if (i >= 0 && i < S.daily.length) { S.selectedDay = S.daily[i].date; drawChart(); drawDay(); }
-      }
+      onClick: e => { const i = Math.round(chart.scales.x.getValueForPixel(e.x)); if (i >= 0 && i < S.daily.length) { S.selectedDay = S.daily[i].date; drawChart(); drawDay(); } }
     },
-    plugins: [selectPlugin, dotsPlugin]
+    plugins: [selectPlugin, curvePlugin, dotsPlugin]
   });
 }
 
-/* ================= TALLY + DAY PANEL ================= */
-function drawTally() {
-  const rs = S.chartReplies, counts = {};
-  rs.forEach(r => { const k = statusKey(r); counts[k] = (counts[k] || 0) + 1; });
+/* ================= FUNNEL, TALLY, DAY PANEL ================= */
+function drawFunnel() {
+  const rs = S.chartReplies, replied = rs.filter(r => !r.ooo);
+  const leads = rs.filter(isLead);
+  const became = leads.filter(r => groupOf(r) === 'converted').length;
+  const won = leads.filter(r => statusKey(r) === 'client').length;
   const { from, to } = rangeFor($('range').value);
-  $('tot').textContent = rs.length.toLocaleString();
-  $('totSub').textContent = rs.filter(isLead).length.toLocaleString() + ' leads · ' + fmtDay(from) + ' to ' + fmtDay(to);
-  $('tally').innerHTML = TALLY_ORDER.filter(k => TALLY_ALWAYS.includes(k) || counts[k])
+  const step = (n, l) => `<div class="fstep"><span class="n">${n.toLocaleString()}</span><span class="l">${l}</span></div>`;
+  $('funnel').innerHTML = step(replied.length, 'Replied') + '<span class="farrow">›</span>' + step(leads.length, 'Leads generated') +
+    '<span class="farrow">›</span>' + step(became, 'Became prospects') + '<span class="farrow">›</span>' + step(won, 'Won') +
+    `<span class="muted" style="margin-left:auto">${fmtDay(from)} to ${fmtDay(to)}</span>`;
+  const counts = {}; rs.forEach(r => { const k = statusKey(r); counts[k] = (counts[k] || 0) + 1; });
+  $('tally').innerHTML = `<span class="tl">All replies<b>${rs.length}</b></span>` + TALLY_ORDER.filter(k => TALLY_ALWAYS.includes(k) || counts[k])
     .map(k => `<span class="tl">${labelOf(k)}<b>${(counts[k] || 0).toLocaleString()}</b></span>`).join('');
 }
 function drawDay() {
   if (!S.selectedDay) { $('dayTitle').textContent = 'Select a day'; $('daySub').textContent = ''; $('dayList').innerHTML = ''; return; }
   const d = S.daily.find(x => x.date === S.selectedDay) || { emailSent: 0, linkedinSent: 0 };
-  const rs = S.chartReplies.filter(r => localDay(r.repliedAt) === S.selectedDay).sort((a, b) => a.ooo - b.ooo);
+  const rs = S.chartReplies.filter(r => bucketDay(r.repliedAt) === S.selectedDay).sort((a, b) => a.ooo - b.ooo);
+  const carried = rs.filter(r => localDay(r.repliedAt) !== S.selectedDay).length;
+  const n = rs.filter(r => !r.ooo).length;
   $('dayTitle').textContent = new Date(S.selectedDay + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  $('daySub').textContent = `${d.emailSent.toLocaleString()} emails · ${d.linkedinSent.toLocaleString()} LinkedIn · ${rs.filter(r => !r.ooo).length} ${rs.filter(r => !r.ooo).length === 1 ? 'reply' : 'replies'}`;
+  $('daySub').textContent = `${d.emailSent.toLocaleString()} emails · ${d.linkedinSent.toLocaleString()} LinkedIn · ${n} ${n === 1 ? 'reply' : 'replies'}${carried ? ` (${carried} from the weekend)` : ''}`;
   $('dayList').innerHTML = rs.length ? rs.map(r => `
     <div class="day-row">
       <span class="dot" style="background:${r.ooo ? '#bdbbb4' : dotColor(r)}"></span>
@@ -455,106 +593,235 @@ function drawDay() {
     </div>`).join('') : '<div class="muted">No replies this day.</div>';
 }
 
-/* ================= MASTER TABLE ================= */
-function fillFilterOptions() {
-  const leadKeys = Object.keys(STATUS).filter(k => STATUS[k].lead);
-  const cur = $('fSt').value || 'all';
-  $('fSt').innerHTML = '<option value="all">All leads</option>' + leadKeys.map(k => `<option value="${k}">${STATUS[k].label}</option>`).join('');
-  $('fSt').value = [...$('fSt').options].some(o => o.value === cur) ? cur : 'all';
-  const seqs = new Map(); [...S.tableReplies, ...S.chartReplies].forEach(r => r.sequenceName && seqs.set(r.sequenceId || r.sequenceName, r.sequenceName));
-  const curSeq = $('fSeq').value || 'all';
-  $('fSeq').innerHTML = '<option value="all">All sequences</option>' + [...seqs.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([id, n]) => `<option value="${esc(id)}">${esc(n)}</option>`).join('');
-  $('fSeq').value = [...$('fSeq').options].some(o => o.value === curSeq) ? curSeq : 'all';
+/* ================= PROSPECTS ================= */
+const ICON = {
+  email: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5 8 9l5.5-4.5"/></svg>',
+  linkedin: '<svg viewBox="0 0 16 16"><text x="8" y="12" text-anchor="middle" font-size="10" font-weight="700" font-family="Arial" fill="currentColor">in</text></svg>',
+  call: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4.5 2.5h2l1 3-1.5 1a8 8 0 0 0 3.5 3.5l1-1.5 3 1v2a1.5 1.5 0 0 1-1.5 1.5A10.5 10.5 0 0 1 3 4a1.5 1.5 0 0 1 1.5-1.5z"/></svg>',
+  meeting: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 7h11M5.5 2v3M10.5 2v3"/></svg>'
+};
+const JCOLOR = { email: '#FF7A1A', linkedin: '#84CC16', call: '#378ADD', meeting: '#7F77DD' };
+const JNAME = { email: 'Email', linkedin: 'LinkedIn', call: 'Call', meeting: 'Meeting' };
+function journeyHtml(j) {
+  if (!j || !j.length) return '<span class="muted">No touches recorded</span>';
+  const list = j.slice(-8), hidden = j.length - list.length;
+  const bits = list.map(t => {
+    const what = t.type === 'call' ? (t.replied ? 'connected' : 'no answer') : t.type === 'meeting' ? 'held' : (t.replied ? 'replied' : 'no reply');
+    return `<span class="ji${t.replied ? ' hit' : ''}" style="${t.replied ? 'background:' + JCOLOR[t.type] : ''}" title="${JNAME[t.type]}, ${fmtIso(t.at)}, ${what}">${ICON[t.type]}</span>`;
+  });
+  return `<div class="journey">${hidden ? `<span class="ji more" title="${hidden} earlier touches">+${hidden}</span><span class="jsep"></span>` : ''}${bits.join('<span class="jsep"></span>')}</div>`;
 }
-function tableRows() {
-  const q = $('fQ').value.trim().toLowerCase(), st = $('fSt').value, ch = $('fCh').value, seq = $('fSeq').value;
-  let rows = S.tableReplies.filter(r => isLead(r)
-    && (st === 'all' || statusKey(r) === st)
-    && (ch === 'all' || r.channel === ch)
-    && (seq === 'all' || (r.sequenceId || r.sequenceName) === seq)
-    && (!q || (r.name + ' ' + r.company).toLowerCase().includes(q)));
-  const { k, asc } = S.sort;
-  rows.sort((a, b) => { const v = String(a[k] || '').localeCompare(String(b[k] || '')); return asc ? v : -v; });
-  return rows;
+function stageKind(d) { const st = stageById(d.stageId); return !st ? 'open' : isParked(st) ? 'parked' : st.kind; }
+const PRO_PRESETS = [['active', 'Active'], ['parked', 'Long term'], ['won', 'Won'], ['lost', 'Lost'], ['all', 'All']];
+const presetsHtml = list => `<span class="presets">Show:${list.map(([k, l]) => `<button class="preset" data-p="${k}">${l}</button>`).join('')}</span><span class="chipsep"></span>`;
+function presetStages(p) { return S.stages.filter(s => { const k = isParked(s) ? 'parked' : s.kind; return p === 'all' || (p === 'active' ? k === 'open' : k === p); }).map(s => s.id); }
+function drawProspects() {
+  if (!S.proSel) S.proSel = new Set(presetStages('active'));
+  const counts = {}; S.deals.forEach(d => { counts[d.stageId] = (counts[d.stageId] || 0) + 1; });
+  const open = S.deals.filter(d => ['open', 'parked'].includes(stageKind(d))).length;
+  $('proChips').innerHTML = presetsHtml(PRO_PRESETS) + S.stages.map(s => `<button class="chip${S.proSel.has(s.id) ? ' on' : ''}" data-id="${s.id}">${esc(s.label)}<span class="c">${counts[s.id] || 0}</span></button>`).join('');
+  $('proTitle').textContent = `Prospects ${open} open`;
+  const rows = S.deals.filter(d => S.proSel.has(d.stageId))
+    .sort((a, b) => (stageById(b.stageId)?.order ?? 0) - (stageById(a.stageId)?.order ?? 0) || daysSince(b.stageEnteredAt) - daysSince(a.stageEnteredAt));
+  $('proBody').innerHTML = rows.length ? rows.map(proRow).join('') : '<tr><td colspan="7" class="empty">No deals here.</td></tr>';
 }
-function statusSelect(r) {
-  const k = statusKey(r);
-  let opts = Object.keys(STATUS).filter(s => STATUS[s].editable).map(s => `<option value="${s}"${s === k ? ' selected' : ''}>${STATUS[s].label}</option>`).join('');
-  if (!STATUS[k].editable) opts = `<option value="" selected disabled>${STATUS[k].label}</option>` + opts;
-  return `<select data-id="${esc(r.hubspotId)}" aria-label="Status for ${esc(r.name)}">${opts}</select>`;
+function proRow(d) {
+  const st = stageById(d.stageId), kind = stageKind(d), days = daysSince(d.stageEnteredAt);
+  let dayCell = '';
+  if (kind === 'open') { const s = st.staleDays || 30; const cls = days <= s * 0.5 ? 'g' : days <= s ? 'a' : 'r'; dayCell = `<span class="days ${cls}">${days}d</span>${days > s ? '<span class="stale">Stale</span>' : ''}`; }
+  else if (kind === 'parked') dayCell = `<span class="days a">${days}d</span>`;
+  else dayCell = `<span class="muted">${d.closedAt ? fmtIso(d.closedAt) : ''}</span>`;
+  const opts = S.stages.map(s => `<option value="${s.id}"${s.id === d.stageId ? ' selected' : ''}>${esc(s.label)}</option>`).join('');
+  let fu;
+  if (S.pendingLong === d.dealId) {
+    fu = `<div class="fu"><input type="date" id="lt-${d.dealId}" value="${ymd(addDays(new Date(), 90))}"><button class="btn btn-sm" data-act="lt-save" data-id="${d.dealId}">Set</button><button class="btn btn-sm" data-act="lt-cancel" data-id="${d.dealId}">Cancel</button></div>`;
+  } else if (d._addFu) {
+    fu = `<div class="fu"><input type="date" id="fu-${d.dealId}" value="${ymd(addDays(new Date(), 7))}"><button class="btn btn-sm" data-act="fu-save" data-id="${d.dealId}">Add</button></div>`;
+  } else if (d.nextTask) {
+    const over = new Date(d.nextTask.dueAt) < new Date();
+    fu = `<div class="fu"><span class="${over ? 'over' : ''}" title="${esc(d.nextTask.subject)}">${over ? 'Overdue ' : ''}${fmtIso(d.nextTask.dueAt)}</span><button class="btn btn-sm" data-act="fu-add" data-id="${d.dealId}" title="Add another follow-up">+</button></div>`;
+  } else if (kind === 'open' || kind === 'parked') {
+    fu = `<button class="btn btn-sm" data-act="fu-add" data-id="${d.dealId}">Add follow-up</button>`;
+  } else fu = '';
+  const who = d.contact?.name || '';
+  return `<tr class="${kind === 'lost' ? 'dim' : ''}">
+    <td><div class="who"><span class="av">${esc(initials(d.company?.name || d.dealName))}</span><div style="min-width:0"><div>${esc(d.company?.name || d.dealName)}</div><div class="sub">${esc(who)}</div></div></div></td>
+    <td><select data-act="stage" data-id="${d.dealId}" aria-label="Stage for ${esc(d.dealName)}">${opts}</select></td>
+    <td>${dayCell}</td>
+    <td><span class="pill p-src">${esc(SOURCE[d.source] || 'Other')}</span></td>
+    <td>${journeyHtml(d.journey)}</td>
+    <td>${fu}</td>
+    <td><a class="hs" target="_blank" rel="noopener" href="https://app.hubspot.com/contacts/${CONFIG.hubspotPortalId}/record/0-3/${encodeURIComponent(d.dealId)}" title="Open deal in HubSpot">HS</a></td>
+  </tr>`;
 }
-function drawTable() {
-  const rows = tableRows();
-  $('tblTitle').textContent = rows.length.toLocaleString() + (rows.length === 1 ? ' lead' : ' leads');
-  $('tbody').innerHTML = rows.length ? rows.map(r => `
-    <tr>
-      <td>${fmtDay(localDay(r.repliedAt))}</td>
-      <td title="${esc(r.name)}">${esc(r.name)}</td>
-      <td title="${esc(r.company)}">${esc(r.company)}</td>
+async function onStageChange(dealId, stageId, reconnectAt) {
+  const d = S.deals.find(x => x.dealId === dealId); const prev = d.stageId;
+  try {
+    const upd = await API.setStage(dealId, stageId, reconnectAt);
+    Object.assign(d, upd); S.pendingLong = null;
+    toast('Saved to HubSpot: ' + stageById(stageId).label);
+    await reloadReplies();
+  } catch (e) { d.stageId = prev; toast('Could not save. ' + e.message, true); }
+  drawProspects();
+}
+$('proBody').addEventListener('change', e => {
+  const el = e.target; if (el.dataset.act !== 'stage') return;
+  const st = stageById(el.value);
+  if (isParked(st)) { S.pendingLong = el.dataset.id; S.deals.find(x => x.dealId === el.dataset.id)._pendingStage = el.value; drawProspects(); return; }
+  onStageChange(el.dataset.id, el.value);
+});
+$('proBody').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const id = b.dataset.id, d = S.deals.find(x => x.dealId === id);
+  if (b.dataset.act === 'lt-cancel') { S.pendingLong = null; drawProspects(); }
+  if (b.dataset.act === 'lt-save') { const v = $('lt-' + id).value; if (!v) return toast('Pick a reconnect date.', true); await onStageChange(id, d._pendingStage, v); }
+  if (b.dataset.act === 'fu-add') { d._addFu = true; drawProspects(); }
+  if (b.dataset.act === 'fu-save') {
+    const v = $('fu-' + id).value; if (!v) return toast('Pick a date.', true);
+    try { d.nextTask = await API.followup(id, v); d._addFu = false; toast('Follow-up task added to the BD Tasks queue'); } catch (err) { toast('Could not save. ' + err.message, true); }
+    drawProspects();
+  }
+});
+$('proChips').addEventListener('click', e => {
+  const p = e.target.closest('.preset'); if (p) { S.proSel = new Set(presetStages(p.dataset.p)); return drawProspects(); }
+  const b = e.target.closest('.chip'); if (!b) return; S.proSel.has(b.dataset.id) ? S.proSel.delete(b.dataset.id) : S.proSel.add(b.dataset.id); drawProspects();
+});
+
+/* ================= LEADS GENERATED ================= */
+const LEAD_PRESETS = [['all', 'All'], ['open', 'Open'], ['converted', 'Became prospects'], ['out', 'Qualified out']];
+const LEAD_ORDER = ['unlabeled', 'interested', 'not_now', 'prospect', 'client', 'previous_prospect', 'proposal_sent', 'went_cold', 'not_a_fit', 'wrong_contact', 'not_interested', 'opted_out', 'past_engagement'];
+const presetStatuses = p => LEAD_ORDER.filter(k => p === 'all' || STATUS[k].group === p);
+function leadFollowCell(r) {
+  if (groupOf(r) !== 'open' || !r.hubspotId) return '';
+  const id = esc(r.hubspotId);
+  if (S.pendingReconnect === r.hubspotId) return `<div class="fu"><input type="date" id="rc-${id}" value="${ymd(addDays(new Date(), 60))}" title="Reconnect date"><button class="btn btn-sm" data-act="rc-save" data-id="${id}">Set</button><button class="btn btn-sm" data-act="rc-cancel" data-id="${id}">Cancel</button></div>`;
+  if (r._addFu) return `<div class="fu"><input type="date" id="lfu-${id}" value="${ymd(addDays(new Date(), 7))}"><button class="btn btn-sm" data-act="lfu-save" data-id="${id}">Add</button></div>`;
+  if (r.nextTask) { const over = new Date(r.nextTask.dueAt) < new Date(); return `<div class="fu"><span class="${over ? 'over' : ''}" title="${esc(r.nextTask.subject)}">${over ? 'Overdue ' : ''}${fmtIso(r.nextTask.dueAt)}</span><button class="btn btn-sm" data-act="lfu-add" data-id="${id}" title="Add another follow-up">+</button></div>`; }
+  const noPlan = statusKey(r) !== 'not_now' && daysSince(r.repliedAt) > 7;
+  return `<div class="fu">${noPlan ? '<span class="noplan">No next step</span>' : ''}<button class="btn btn-sm" data-act="lfu-add" data-id="${id}">Add follow-up</button></div>`;
+}
+function leadRows() {
+  const q = $('fQ').value.trim().toLowerCase(), ch = $('fCh').value, seq = $('fSeq').value;
+  return S.tableReplies.filter(r => isLead(r)
+    && (ch === 'all' || r.channel === ch) && (seq === 'all' || (r.sequenceId || r.sequenceName) === seq)
+    && (!q || (r.name + ' ' + r.company).toLowerCase().includes(q)))
+    .sort((a, b) => b.repliedAt.localeCompare(a.repliedAt));
+}
+function statusCell(r) {
+  const k = statusKey(r), st = STATUS[k];
+  if (st.group === 'converted') return `<span class="pill ${st.pill}">${st.label}${k === 'prospect' ? ' (in pipeline)' : ''}</span>`;
+  if (!r.hubspotId) return '<span class="muted">Not in HubSpot</span>';
+  if (k === 'opted_out') return `<span class="pill ${st.pill}">${st.label}</span>`;
+  const opts = ['interested', 'not_now', 'went_cold', 'not_a_fit', 'wrong_contact', 'not_interested', 'opted_out']
+    .map(s => `<option value="${s}"${s === k ? ' selected' : ''}>${STATUS[s].label}</option>`).join('');
+  const head = st.pick ? '' : `<option value="" selected disabled>${st.label}</option>`;
+  return `<select data-id="${esc(r.hubspotId)}" aria-label="Status for ${esc(r.name)}">${head}${opts}<optgroup label="Pipeline"><option value="prospect">Make prospect ›</option></optgroup></select>`;
+}
+function drawLeads() {
+  if (!S.leadSel) S.leadSel = new Set(presetStatuses('all'));
+  const all = leadRows(), counts = {};
+  all.forEach(r => { const k = statusKey(r); counts[k] = (counts[k] || 0) + 1; });
+  $('leadChips').innerHTML = presetsHtml(LEAD_PRESETS) + LEAD_ORDER.filter(k => counts[k] || S.leadSel.has(k) && ['unlabeled', 'interested', 'not_now', 'prospect'].includes(k))
+    .map(k => `<button class="chip${S.leadSel.has(k) ? ' on' : ''}" data-k="${k}">${STATUS[k].label}<span class="c">${counts[k] || 0}</span></button>`).join('');
+  $('leadTitle').textContent = `Leads generated ${all.length}`;
+  const rows = all.filter(r => S.leadSel.has(statusKey(r)));
+  $('leadBody').innerHTML = rows.length ? rows.map(r => {
+    const days = daysSince(r.repliedAt), g = groupOf(r), cls = days <= 7 ? 'g' : days <= 21 ? 'a' : 'r';
+    return `<tr class="${g === 'out' ? 'dim' : ''}">
+      <td>${fmtIso(r.repliedAt)}</td>
+      <td><div class="who"><span class="av">${esc(initials(r.name))}</span><div style="min-width:0"><div>${esc(r.name)}</div><div class="sub">${esc(r.company)}</div></div></div></td>
       <td title="${esc(r.sequenceName)}">${esc(r.sequenceName)}</td>
       <td><span style="display:inline-flex;align-items:center;gap:6px"><span class="dot" style="background:${dotColor(r)}"></span>${r.channel === 'linkedin' ? 'LinkedIn' : 'Email'}</span></td>
-      <td>${r.hubspotId ? statusSelect(r) : '<span class="muted">Not in HubSpot</span>'}</td>
-      <td>${r.hubspotId ? `<a class="hs" target="_blank" rel="noopener" href="https://app.hubspot.com/contacts/${CONFIG.hubspotPortalId}/record/0-1/${encodeURIComponent(r.hubspotId)}" title="Open in HubSpot">HS</a>` : ''}</td>
-    </tr>`).join('') : '<tr><td colspan="7" class="empty">No leads match these filters.</td></tr>';
-  document.querySelectorAll('#tbody select').forEach(sel => sel.addEventListener('change', onStatusChange));
-  document.querySelectorAll('th[data-k]').forEach(th => {
-    const on = th.dataset.k === S.sort.k;
-    th.textContent = th.textContent.replace(/ [▲▼]$/, '') + (on ? (S.sort.asc ? ' ▲' : ' ▼') : '');
-  });
+      <td>${g === 'open' ? `<span class="days ${cls}">${days}d</span>` : ''}</td>
+      <td>${statusCell(r)}</td>
+      <td>${leadFollowCell(r)}</td>
+      <td>${r.hubspotId ? `<a class="hs" target="_blank" rel="noopener" href="https://app.hubspot.com/contacts/${CONFIG.hubspotPortalId}/record/0-1/${encodeURIComponent(r.hubspotId)}" title="Open contact in HubSpot">HS</a>` : ''}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" class="empty">No leads match these filters.</td></tr>';
 }
-async function onStatusChange(e) {
-  const sel = e.target, id = sel.dataset.id, next = sel.value;
-  const targets = [...S.tableReplies, ...S.chartReplies].filter(r => r.hubspotId === id);
-  const prev = targets[0] ? targets[0].status : '';
-  sel.classList.add('saving'); sel.disabled = true;
+$('leadBody').addEventListener('change', async e => {
+  const sel = e.target; if (sel.tagName !== 'SELECT') return;
+  const id = sel.dataset.id, next = sel.value;
+  if (next === 'not_now') { S.pendingReconnect = id; drawLeads(); return; }
+  await saveLeadStatus(id, next, null, sel);
+});
+async function saveLeadStatus(id, next, reconnectAt, sel) {
+  if (next === 'prospect' && !confirm('Make this lead a prospect? This creates a deal in the BD pipeline in HubSpot.')) { drawLeads(); return; }
+  if (sel) { sel.classList.add('saving'); sel.disabled = true; }
   try {
-    await saveStatus(id, next);
-    targets.forEach(r => { r.status = next; });
-    if (S.mode === 'demo') DEMO.setStatus(id, next);
-    toast('Saved to HubSpot: ' + STATUS[next].label);
-    drawTally(); drawDay(); drawChart(); drawTable();
-  } catch (err) {
-    targets.forEach(r => { r.status = prev; });
-    toast('Could not save. ' + err.message, true);
-    drawTable();
+    const res = await API.setStatus(id, next, reconnectAt);
+    [...S.tableReplies, ...S.chartReplies].filter(r => r.hubspotId === id).forEach(r => { r.status = next; if (STATUS[next].group !== 'out') r.wasLead = true; if (res && 'nextTask' in res) r.nextTask = res.nextTask; });
+    S.pendingReconnect = null;
+    toast(next === 'prospect' ? 'Deal created in the BD pipeline' : 'Saved to HubSpot: ' + STATUS[next].label);
+    if (res && res.dealId) { S.deals = await API.prospects(); S.proSel = new Set(presetStages('active')); drawProspects(); }
+  } catch (err) { toast('Could not save. ' + err.message, true); }
+  drawFunnel(); drawDay(); drawLeads();
+}
+$('leadBody').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const id = b.dataset.id, rows = [...S.tableReplies, ...S.chartReplies].filter(r => r.hubspotId === id);
+  if (b.dataset.act === 'rc-cancel') { S.pendingReconnect = null; drawLeads(); }
+  if (b.dataset.act === 'rc-save') { const v = $('rc-' + id).value; if (!v) return toast('Pick a reconnect date.', true); await saveLeadStatus(id, 'not_now', v, null); }
+  if (b.dataset.act === 'lfu-add') { rows.forEach(r => r._addFu = true); drawLeads(); }
+  if (b.dataset.act === 'lfu-save') {
+    const v = $('lfu-' + id).value; if (!v) return toast('Pick a date.', true);
+    try { const t = await API.leadFollowup(id, v); rows.forEach(r => { r.nextTask = t; r._addFu = false; }); toast('Follow-up task added to the BD Tasks queue'); } catch (err) { toast('Could not save. ' + err.message, true); }
+    drawLeads();
   }
+});
+$('leadChips').addEventListener('click', e => {
+  const p = e.target.closest('.preset'); if (p) { S.leadSel = new Set(presetStatuses(p.dataset.p)); return drawLeads(); }
+  const b = e.target.closest('.chip'); if (!b) return; S.leadSel.has(b.dataset.k) ? S.leadSel.delete(b.dataset.k) : S.leadSel.add(b.dataset.k); drawLeads();
+});
+function fillSeqFilter() {
+  const seqs = new Map(); S.tableReplies.forEach(r => r.sequenceName && seqs.set(r.sequenceId || r.sequenceName, r.sequenceName));
+  const cur = $('fSeq').value || 'all';
+  $('fSeq').innerHTML = '<option value="all">All sequences</option>' + [...seqs.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([id, n]) => `<option value="${esc(id)}">${esc(n)}</option>`).join('');
+  $('fSeq').value = [...$('fSeq').options].some(o => o.value === cur) ? cur : 'all';
 }
 function exportCSV() {
-  const rows = tableRows();
+  const rows = leadRows().filter(r => S.leadSel.has(statusKey(r)));
   const head = ['Replied', 'Name', 'Company', 'Sequence', 'Channel', 'Status'];
   const body = rows.map(r => [localDay(r.repliedAt), r.name, r.company, r.sequenceName, r.channel, labelOf(statusKey(r))]);
   const csv = [head, ...body].map(x => x.map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-  a.download = 'rwt_leads_' + ymd(new Date()) + '.csv'; a.click();
+  const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv); a.download = 'rwt_leads_' + ymd(new Date()) + '.csv'; a.click();
 }
 
 /* ================= LOADING ================= */
 async function loadChart() {
   const { from, to } = rangeFor($('range').value);
-  const [daily, replies] = await Promise.all([getDaily(from, to), getReplies(from, to)]);
+  const [daily, replies] = await Promise.all([API.daily(from, to), API.replies(from, to)]);
   const byDate = Object.fromEntries(daily.map(d => [d.date, d]));
-  S.daily = dayList(from, to).map(date => byDate[date] || { date, emailSent: 0, linkedinSent: 0 });
+  /* Days with no sends (weekends) are left out so the curve stays smooth. Replies that land on those days
+     are shown on the next sending day (the day panel says so). */
+  const all = dayList(from, to).map(date => byDate[date] || { date, emailSent: 0, linkedinSent: 0 });
+  S.daily = all.filter(d => d.emailSent + d.linkedinSent > 0);
+  if (!S.daily.length) S.daily = all;
   S.chartReplies = replies;
   if (!S.selectedDay || !S.daily.some(d => d.date === S.selectedDay)) {
-    const withReplies = S.daily.filter(d => replies.some(r => !r.ooo && localDay(r.repliedAt) === d.date));
+    const withReplies = S.daily.filter(d => replies.some(r => !r.ooo && bucketDay(r.repliedAt) === d.date));
     S.selectedDay = (withReplies[withReplies.length - 1] || S.daily[S.daily.length - 1]).date;
   }
-  drawTally(); drawChart(); drawDay();
+  drawFunnel(); drawChart(); drawDay();
 }
 async function loadTable() {
   const { from, to } = rangeFor($('fTime').value);
-  S.tableReplies = await getReplies(from, to);
-  fillFilterOptions(); drawTable();
+  S.tableReplies = await API.replies(from, to);
+  fillSeqFilter(); drawLeads();
 }
+async function loadPipeline() {
+  const [p, deals] = await Promise.all([API.pipeline(), API.prospects()]);
+  S.stages = (p.stages || []).map(s => ({ ...s, id: String(s.id) })).sort((a, b) => a.order - b.order);
+  S.deals = deals; drawProspects();
+}
+async function reloadReplies() { await Promise.all([loadChart(), loadTable()]); }
 async function refreshAll() {
   $('refreshBtn').disabled = true;
   try {
-    await Promise.all([loadChart(), loadTable()]);
+    await Promise.all([loadChart(), loadTable(), loadPipeline()]);
     $('updated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  } catch (err) {
-    toast(err.message, true);
-  } finally { $('refreshBtn').disabled = false; }
+  } catch (err) { toast(err.message, true); }
+  finally { $('refreshBtn').disabled = false; }
 }
 
 /* ================= LOGIN ================= */
@@ -574,15 +841,9 @@ async function login() {
   const pw = $('pw').value.trim();
   if (!pw) { $('gateErr').textContent = 'Enter the password.'; return; }
   $('gateErr').textContent = ''; $('loginBtn').disabled = true;
-  try {
-    await tryKey(pw);
-    S.key = pw; S.mode = 'live';
-    if ($('remember').checked) saved.set(pw); else saved.clear();
-    start();
-  } catch (err) {
-    S.key = null;
-    $('gateErr').textContent = err.message === 'Failed to fetch' ? "Can't reach the server." : err.message;
-  } finally { $('loginBtn').disabled = false; }
+  try { await tryKey(pw); S.key = pw; S.mode = 'live'; if ($('remember').checked) saved.set(pw); else saved.clear(); start(); }
+  catch (err) { S.key = null; $('gateErr').textContent = err.message === 'Failed to fetch' ? "Can't reach the server." : err.message; }
+  finally { $('loginBtn').disabled = false; }
 }
 async function autoLogin() {
   const pw = saved.get(); if (!pw) return;
@@ -609,11 +870,8 @@ $('logoutBtn').addEventListener('click', logout);
 $('refreshBtn').addEventListener('click', refreshAll);
 $('range').addEventListener('change', () => { S.selectedDay = null; loadChart().catch(e => toast(e.message, true)); });
 $('fTime').addEventListener('change', () => loadTable().catch(e => toast(e.message, true)));
-['fQ', 'fSt', 'fCh', 'fSeq'].forEach(id => $(id).addEventListener(id === 'fQ' ? 'input' : 'change', drawTable));
+['fQ', 'fCh', 'fSeq'].forEach(id => $(id).addEventListener(id === 'fQ' ? 'input' : 'change', drawLeads));
 $('csvBtn').addEventListener('click', exportCSV);
-document.querySelectorAll('th[data-k]').forEach(th => th.addEventListener('click', () => {
-  const k = th.dataset.k; S.sort = { k, asc: S.sort.k === k ? !S.sort.asc : k !== 'repliedAt' }; drawTable();
-}));
 autoLogin();
 </script>
 </body>
