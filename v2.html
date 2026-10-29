@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RWT Outreach</title>
 <!--
-RWT OUTREACH DASHBOARD (Salesforge + HubSpot), file version v11
+RWT OUTREACH DASHBOARD (Salesforge + HubSpot), file version v12 (Add prospect button)
 
 How it works
   - The page holds no API keys. Every request goes to the outreach-sync server on Railway,
@@ -23,6 +23,8 @@ Server routes this page expects (see DASHBOARD_API_BRIEF_v5.md)
   GET   /dashboard/prospects?include=all
   PATCH /dashboard/deals/:dealId/stage          {"stageId": "...", "reconnectAt": "YYYY-MM-DD"}
   POST  /dashboard/deals/:dealId/followups      {"dueAt": "YYYY-MM-DD", "note": "..."}
+  GET   /dashboard/contacts/search?q=...        existing HubSpot contacts, max 10, with flags (Add prospect)
+  POST  /dashboard/prospects                    {"contactId": "...", "source": "...", "confirm": true} (Add prospect)
 -->
 <style>
 :root{
@@ -136,6 +138,31 @@ td select{height:28px;font-size:12px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 16px;border-radius:var(--radius);font-size:13px;display:none;z-index:50;max-width:90vw}
 .toast.err{background:var(--danger)}
 
+/* Add prospect */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.28);display:none;align-items:flex-start;justify-content:center;padding:10vh 16px 16px;z-index:40}
+.modal-bg.on{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px 20px;width:100%;max-width:540px;max-height:80vh;display:flex;flex-direction:column;gap:10px}
+.modal-head{display:flex;align-items:center;gap:8px}
+.modal-head h2{font-size:16px;color:var(--navy);margin-right:auto}
+.modal input[type=search]{width:100%;height:36px}
+.ap-list{display:flex;flex-direction:column;overflow-y:auto;min-height:0;border-top:1px solid var(--border)}
+.ap-row{display:flex;align-items:center;gap:10px;padding:9px 6px;border:none;border-bottom:1px solid var(--border);background:none;text-align:left;width:100%;color:var(--text);min-width:0}
+.ap-row:hover,.ap-row.on{background:var(--surface-2)}
+.ap-row .who{flex:1}
+.ap-row .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ap-row .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ap-tags{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;flex:none;max-width:45%}
+.tag.warn{border-color:#EF9F27;color:#854F0B}
+.tag.block{border-color:#E9A6A6;color:#791F1F;background:#FCEBEB}
+.ap-pick{background:var(--surface-2);border-radius:var(--radius);padding:12px;display:flex;flex-direction:column;gap:8px;font-size:13px}
+.ap-pick .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ap-msg{font-size:13px;color:var(--text-2)}
+.ap-msg.err{color:var(--danger)}
+.ap-warn{background:#fff6e5;color:#7a4b00;border:1px solid #f3d9a4;border-radius:var(--radius);padding:8px 10px;font-size:13px}
+.btn-go{background:var(--navy);color:#fff;border-color:var(--navy)}
+.btn-go:hover{opacity:.92;background:var(--navy)}
+.btn:disabled{opacity:.5;cursor:default}
+
 @media (max-width:900px){
   .split{grid-template-columns:minmax(0,1fr)}
   .hdr,main{padding-left:16px;padding-right:16px}
@@ -224,6 +251,7 @@ td select{height:28px;font-size:12px}
       <div class="tbl-head">
         <h2 id="proTitle">Prospects</h2>
         <span class="muted">BD pipeline in HubSpot</span>
+        <button class="btn" id="addProBtn">Add prospect</button>
       </div>
       <div class="chips" id="proChips"></div>
       <div class="tbl-wrap">
@@ -280,6 +308,20 @@ td select{height:28px;font-size:12px}
       </div>
     </section>
   </main>
+</div>
+
+<div class="modal-bg" id="apBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="apTitle">
+    <div class="modal-head">
+      <h2 id="apTitle">Add prospect</h2>
+      <button class="btn btn-sm" id="apClose" aria-label="Close">Close</button>
+    </div>
+    <div class="muted">Existing HubSpot contacts only. Search by name, email or company.</div>
+    <input type="search" id="apQ" placeholder="Type at least 2 characters" autocomplete="off" aria-label="Search HubSpot contacts">
+    <div class="ap-msg" id="apMsg"></div>
+    <div class="ap-list" id="apList"></div>
+    <div id="apPick"></div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -394,8 +436,19 @@ const API = {
   setStatus: (id, status, reconnectAt) => S.mode === 'demo' ? DEMO.setStatus(id, status, reconnectAt) : api(`/dashboard/contacts/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: JSON.stringify({ status, reconnectAt }) }),
   leadFollowup: (id, dueAt) => S.mode === 'demo' ? DEMO.leadFollowup(id, dueAt) : api(`/dashboard/contacts/${encodeURIComponent(id)}/followups`, { method: 'POST', body: JSON.stringify({ dueAt }) }),
   setStage: (dealId, stageId, reconnectAt) => S.mode === 'demo' ? DEMO.setStage(dealId, stageId, reconnectAt) : api(`/dashboard/deals/${encodeURIComponent(dealId)}/stage`, { method: 'PATCH', body: JSON.stringify({ stageId, reconnectAt }) }),
-  followup: (dealId, dueAt) => S.mode === 'demo' ? DEMO.followup(dealId, dueAt) : api(`/dashboard/deals/${encodeURIComponent(dealId)}/followups`, { method: 'POST', body: JSON.stringify({ dueAt }) })
+  followup: (dealId, dueAt) => S.mode === 'demo' ? DEMO.followup(dealId, dueAt) : api(`/dashboard/deals/${encodeURIComponent(dealId)}/followups`, { method: 'POST', body: JSON.stringify({ dueAt }) }),
+  /* Add prospect: both return { status, body } so the server's plain-English reason (blocked, needs confirm) can be shown. */
+  searchContacts: q => S.mode === 'demo' ? DEMO.searchContacts(q) : apiRaw(`/dashboard/contacts/search?q=${encodeURIComponent(q)}`),
+  addProspect: (contactId, source, confirm) => S.mode === 'demo' ? DEMO.addProspect(contactId, source, confirm) : apiRaw('/dashboard/prospects', { method: 'POST', body: JSON.stringify({ contactId, source, confirm }) })
 };
+/* Like api(), but hands back the status and body instead of throwing, and never logs out on its own. Throws only when the server can't be reached. */
+async function apiRaw(path, opts = {}) {
+  let r;
+  try { r = await fetch(CONFIG.apiBase + path, { ...opts, headers: { 'Content-Type': 'application/json', 'x-dashboard-key': S.key, ...(opts.headers || {}) } }); }
+  catch { throw new Error("Can't reach the server. Nothing was changed."); }
+  let body = {}; try { body = await r.json() || {}; } catch {}
+  return { status: r.status, body };
+}
 
 /* ================= DEMO DATA ================= */
 /* demo only: a campaign launch roughly every week and a half gives the sends (and visits) real peaks */
@@ -505,9 +558,53 @@ const DEMO = (() => {
       if (reconnectAt) d.nextTask = { id: 't' + Date.now(), dueAt: new Date(reconnectAt + 'T16:00:00').toISOString(), subject: 'Reconnect' };
       syncContact(d); return { ...d };
     },
-    followup: (dealId, dueAt) => { const d = deals.find(x => x.dealId === dealId); d.nextTask = { id: 't' + Date.now(), dueAt: new Date(dueAt + 'T16:00:00').toISOString(), subject: 'Follow up' }; return d.nextTask; }
+    followup: (dealId, dueAt) => { const d = deals.find(x => x.dealId === dealId); d.nextTask = { id: 't' + Date.now(), dueAt: new Date(dueAt + 'T16:00:00').toISOString(), subject: 'Follow up' }; return d.nextTask; },
+    /* Add prospect, demo: searches the made-up contacts above with the same rules as the server. */
+    searchContacts: q => {
+      const s = q.toLowerCase();
+      const hits = replies.filter(r => !r.ooo && (r.name + ' ' + r.company).toLowerCase().includes(s)).slice(0, 10);
+      return { status: 200, body: { writeEnabled: true, sources: Object.entries(SOURCE).map(([value, label]) => ({ value, label })), results: hits.map(demoJudge) } };
+    },
+    addProspect: (cid, source, confirm) => {
+      const r = find(cid); if (!r) return { status: 404, body: { error: 'not_found', message: 'No HubSpot contact with that ID. Nothing was created.' } };
+      const j = demoJudge(r);
+      const own = j.openDealId && deals.find(d => d.dealId === j.openDealId).contact.hubspotId === cid;
+      if (r.status === 'prospect' && own) return { status: 200, body: { ok: true, dealId: j.openDealId, dealCreated: false, alreadyProspect: true, stillInSequence: j.flags.inSequenceNow } };
+      if (j.blocked) return { status: 409, body: { error: j.blocked.reason, message: j.blocked.message, dealId: j.openDealId } };
+      if (j.warnings.length && confirm !== true) return { status: 409, body: { error: 'confirm_required', warnings: j.warnings } };
+      r.status = 'prospect'; r.wasLead = true; r.nextTask = null;
+      const d = makeDeal(r, '39985460', { source }); d.createdAt = new Date().toISOString(); d.stageEnteredAt = d.createdAt; d.nextTask = null;
+      return { status: 200, body: { ok: true, dealId: d.dealId, dealCreated: true, alreadyProspect: false, stillInSequence: j.flags.inSequenceNow } };
+    }
   };
+  function demoJudge(r) {
+    const mine = deals.filter(d => d.contact.hubspotId === r.hubspotId), kind = d => stages.find(s => s.id === d.stageId).kind;
+    const open = mine.find(d => kind(d) === 'open');
+    const flags = {
+      hasOpenDeal: !!open, companyClosedWon: r.status === 'client' || mine.some(d => kind(d) === 'won'),
+      optedOut: r.status === 'opted_out', previousProspect: r.status === 'previous_prospect' || mine.some(d => kind(d) === 'lost'),
+      inSequenceNow: Number(r.hubspotId) % 7 === 0   /* demo only: some contacts look still enrolled */
+    };
+    const blocked = flags.optedOut ? 'opted_out' : flags.companyClosedWon ? 'closed_won' : flags.hasOpenDeal ? 'open_deal' : null;
+    const warnings = [flags.previousProspect && 'previous_prospect', flags.inSequenceNow && 'in_sequence'].filter(Boolean);
+    return {
+      hubspotId: r.hubspotId, name: r.name, company: r.company, title: '',
+      email: r.name.split(' ')[0].toLowerCase() + '@' + r.company.split(' ')[0].toLowerCase() + '.ca',
+      status: r.status, statusLabel: STATUS[r.status] ? STATUS[r.status].label : '', inSequence: flags.inSequenceNow, flags,
+      openDealId: open ? open.dealId : null,
+      blocked: blocked ? { reason: blocked, message: AP_DEMO_MSG[blocked] } : null,
+      warnings: warnings.map(w => ({ reason: w, message: AP_DEMO_MSG[w] }))
+    };
+  }
 })();
+/* Demo only: the live server sends its own wording. */
+const AP_DEMO_MSG = {
+  opted_out: 'This contact or their company has opted out, so they cannot be made a prospect.',
+  closed_won: 'This company is already a client (Closed won), so it cannot be added as a prospect.',
+  open_deal: 'This contact or their company already has an open deal in the BD pipeline.',
+  previous_prospect: 'This company was a prospect before and the deal was lost.',
+  in_sequence: 'This contact is still active or paused in a Salesforge sequence. Adding them does not stop it: stop it in Salesforge.'
+};
 
 /* ================= CHART ================= */
 let chart = null;
@@ -761,6 +858,116 @@ $('proBody').addEventListener('click', async e => {
 $('proChips').addEventListener('click', e => {
   const p = e.target.closest('.preset'); if (p) { S.proSel = new Set(presetStages(p.dataset.p)); return drawProspects(); }
   const b = e.target.closest('.chip'); if (!b) return; S.proSel.has(b.dataset.id) ? S.proSel.delete(b.dataset.id) : S.proSel.add(b.dataset.id); drawProspects();
+});
+
+/* ================= ADD PROSPECT ================= */
+/* Search existing HubSpot contacts and make one a prospect. The server decides what is blocked or needs a confirm. */
+const AP = { results: [], sources: [], writeEnabled: true, sel: null, source: '', warnings: null, err: '', busy: false, timer: null, seq: 0 };
+const AP_TAG = { opted_out: 'Opted out', closed_won: 'Client', open_deal: 'Open deal', previous_prospect: 'Previous prospect', in_sequence: 'In sequence' };
+function apMsg(text, err) { $('apMsg').textContent = text || ''; $('apMsg').className = 'ap-msg' + (err ? ' err' : ''); }
+function apError(status, body) {
+  if (status === 401) return 'The dashboard password was not accepted. It may have changed: log out and sign in again.';
+  if (status === 429) return 'Too many wrong passwords from this computer. Wait 15 minutes and try again.';
+  if (body && body.message) return body.message;
+  if (status === 400) return 'Type between 2 and 100 characters.';
+  return 'Server error ' + status + '. Nothing was changed.';
+}
+function apOpen() {
+  Object.assign(AP, { results: [], sel: null, source: '', warnings: null, err: '', busy: false });
+  $('apQ').value = ''; apMsg(''); apDraw();
+  $('apBg').classList.add('on'); $('apQ').focus();
+}
+function apClose() { $('apBg').classList.remove('on'); clearTimeout(AP.timer); AP.seq++; }
+async function apSearch() {
+  const q = $('apQ').value.trim();
+  Object.assign(AP, { sel: null, warnings: null, err: '' });
+  if (q.length < 2) { AP.results = []; apMsg(q ? 'Type at least 2 characters.' : ''); return apDraw(); }
+  const my = ++AP.seq; apMsg('Searching...');
+  try {
+    const { status, body } = await API.searchContacts(q);
+    if (my !== AP.seq) return;   /* a newer search has started */
+    if (status !== 200) { AP.results = []; apMsg(apError(status, body), true); return apDraw(); }
+    AP.results = body.results || []; AP.sources = body.sources || []; AP.writeEnabled = body.writeEnabled !== false;
+    apMsg(!AP.results.length ? 'No HubSpot contacts match.' : AP.results.length >= 10 ? 'Showing the first 10. Type more to narrow it down.' : '');
+  } catch (e) { if (my !== AP.seq) return; AP.results = []; apMsg(e.message, true); }
+  apDraw();
+}
+function apDraw() {
+  $('apList').innerHTML = AP.results.map(c => {
+    const st = STATUS[c.status];
+    const tags = [c.blocked && `<span class="tag block">${esc(AP_TAG[c.blocked.reason] || c.blocked.reason)}</span>`,
+      ...(c.warnings || []).map(w => `<span class="tag warn">${esc(AP_TAG[w.reason] || w.reason)}</span>`)].filter(Boolean).join('');
+    const sub = [c.company, c.email].filter(Boolean).join(' · ');
+    return `<button class="ap-row${AP.sel === c ? ' on' : ''}" data-id="${esc(c.hubspotId)}">
+      <div class="who"><span class="av">${esc(initials(c.company || c.name))}</span><div style="min-width:0"><div class="nm">${esc(c.name || '(no name)')}</div><div class="sub">${esc(sub)}</div></div></div>
+      <div class="ap-tags"><span class="pill ${st ? st.pill : 'p-un'}">${esc(c.statusLabel || 'No status')}</span>${tags}</div>
+    </button>`;
+  }).join('');
+  apDrawPick();
+}
+function apDrawPick() {
+  const c = AP.sel;
+  if (!c) { $('apPick').innerHTML = ''; return; }
+  const head = `<div><b>${esc(c.name || '(no name)')}</b>${c.company ? ', ' + esc(c.company) : ''}${c.title ? ` <span class="muted">${esc(c.title)}</span>` : ''}</div>`;
+  const dealLink = id => `<a class="hs" target="_blank" rel="noopener" href="https://app.hubspot.com/contacts/${CONFIG.hubspotPortalId}/record/0-3/${encodeURIComponent(id)}" title="Open deal in HubSpot">HS</a>`;
+  if (c.blocked) {
+    $('apPick').innerHTML = `<div class="ap-pick">${head}<div class="ap-msg err">${esc(c.blocked.message)}</div>${c.openDealId ? `<div class="row">Existing deal: ${dealLink(c.openDealId)}</div>` : ''}</div>`;
+    return;
+  }
+  const off = !AP.writeEnabled;
+  const opts = `<option value="">Choose a source</option>` + AP.sources.map(s => `<option value="${esc(s.value)}"${s.value === AP.source ? ' selected' : ''}>${esc(s.label)}</option>`).join('');
+  let action;
+  if (AP.warnings) {
+    action = `<div class="ap-warn">${AP.warnings.map(w => `<div>${esc(w.message)}</div>`).join('')}</div>
+      <div class="row"><button class="btn btn-go" data-act="ap-go" data-confirm="1"${AP.busy ? ' disabled' : ''}>Continue anyway</button><button class="btn" data-act="ap-cancel"${AP.busy ? ' disabled' : ''}>Cancel</button></div>`;
+  } else {
+    action = `<div class="row"><select id="apSource" aria-label="Deal source"${off || AP.busy ? ' disabled' : ''}>${opts}</select>
+      <button class="btn btn-go" data-act="ap-go"${off || AP.busy ? ' disabled' : ''}>${AP.busy ? 'Adding...' : 'Add as prospect'}</button></div>`;
+  }
+  $('apPick').innerHTML = `<div class="ap-pick">${head}${action}
+    ${off ? '<div class="ap-msg">Adding prospects is switched off on the server for now.</div>' : ''}
+    ${AP.err ? `<div class="ap-msg err">${esc(AP.err)}</div>` : ''}
+    <div class="muted">Creates a deal at Prospect in the BD pipeline and sets the contact to Prospect.</div></div>`;
+}
+async function apAdd(confirm) {
+  const c = AP.sel; if (!c || AP.busy) return;
+  if ($('apSource')) AP.source = $('apSource').value;
+  if (!AP.source) { AP.err = 'Choose a source first.'; return apDrawPick(); }
+  AP.busy = true; AP.err = ''; apDrawPick();
+  try {
+    const { status, body } = await API.addProspect(c.hubspotId, AP.source, confirm);
+    if (status === 200) {
+      apClose();
+      toast(body.alreadyProspect ? 'Already a prospect. Nothing was changed.'
+        : 'Prospect added: deal created in the BD pipeline.' + (body.stillInSequence ? ' Still in a Salesforge sequence: stop it there.' : ''));
+      S.proSel = new Set(presetStages('active'));
+      await refreshProspectsUntil(body.dealId);
+      reloadReplies().catch(() => {});   /* the Leads table shows the new status */
+      return;
+    }
+    if (status === 409 && body.error === 'confirm_required') AP.warnings = body.warnings || [];
+    else {
+      AP.err = apError(status, body); AP.warnings = null;
+      if (status === 409 && body.error && AP_TAG[body.error]) { c.blocked = { reason: body.error, message: body.message || AP.err }; if (body.dealId) c.openDealId = body.dealId; AP.err = ''; }
+    }
+  } catch (e) { AP.err = e.message; }
+  AP.busy = false; apDraw();
+}
+$('addProBtn').addEventListener('click', apOpen);
+$('apClose').addEventListener('click', apClose);
+$('apBg').addEventListener('click', e => { if (e.target === $('apBg')) apClose(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('apBg').classList.contains('on')) apClose(); });
+$('apQ').addEventListener('input', () => { clearTimeout(AP.timer); AP.timer = setTimeout(apSearch, 350); });
+$('apList').addEventListener('click', e => {
+  const b = e.target.closest('.ap-row'); if (!b || AP.busy) return;
+  AP.sel = AP.results.find(c => c.hubspotId === b.dataset.id) || null; AP.warnings = null; AP.err = '';
+  apDraw();
+});
+$('apPick').addEventListener('change', e => { if (e.target.id === 'apSource') { AP.source = e.target.value; if (AP.err) { AP.err = ''; apDrawPick(); } } });
+$('apPick').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.act === 'ap-go') apAdd(b.dataset.confirm === '1');
+  if (b.dataset.act === 'ap-cancel') { AP.warnings = null; apDrawPick(); }
 });
 
 /* ================= LEADS GENERATED ================= */
