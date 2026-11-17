@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Spintax Generator v7</title>
+<title>Spintax Generator v8</title>
 <style>
 :root{--blue:#FF6633;--blue-d:#D9491B;--line:#d5d9e0;--ink:#1d2430;--mute:#667085;--bad:#c62828;--warn:#a85d00;--ok:#1b7f3b}
 *{box-sizing:border-box}
@@ -93,7 +93,7 @@ dialog h2{margin-top:12px}
 </head>
 <body>
 <header class="top">
-  <h1>Spintax Generator</h1><span class="ver">v7</span>
+  <h1>Spintax Generator</h1><span class="ver">v8</span>
   <div class="spacer"></div>
   <button data-a="project-open">Open project</button>
   <button data-a="project-save">Save project</button>
@@ -1055,7 +1055,12 @@ function docxBytes(ids) {
   const para = (t, bold) => t === "" ? "<w:p/>" : "<w:p><w:r>" + (bold ? "<w:rPr><w:b/></w:rPr>" : "") + "<w:t xml:space=\"preserve\">" + xmlEsc(t) + "</w:t></w:r></w:p>";
   const fmt = getFmt(), body = [];
   if (!fmt.verified) body.push(para("Output format: " + fmt.name), para(""));
-  exportSteps(ids).forEach((st, i) => { if (i) body.push(para(""), para("")); body.push(para(st.name, true), para(""), ...st.lines.map(l => para(l))); });
+  const steps = exportSteps(ids);
+  steps.forEach((st, i) => { if (i) body.push(para(""), para("")); body.push(para(st.name, true), para(""), ...st.lines.map(l => para(l))); });
+  /* Word file only: list the custom variables that the exported steps use, so nobody has to hunt for them in Salesforge. The text export and copy stay clean for pasting. */
+  const usedVars = new Set(steps.flatMap(st => varsIn(st.lines.join(" "))));
+  const customUsed = settings.vars.filter(v => !DEFAULT_SETTINGS.vars.includes(v) && usedVars.has(v));
+  if (customUsed.length) body.push(para(""), para(""), para("Custom variables used", true), para(""), ...customUsed.map(v => para("{{" + v + "}}")));
   const W = "xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"";
   const head = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>";
   return zipStore([
