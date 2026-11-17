@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Spintax Generator v6</title>
+<title>Spintax Generator v8</title>
 <style>
 :root{--blue:#FF6633;--blue-d:#D9491B;--line:#d5d9e0;--ink:#1d2430;--mute:#667085;--bad:#c62828;--warn:#a85d00;--ok:#1b7f3b}
 *{box-sizing:border-box}
@@ -58,6 +58,15 @@ textarea{min-height:150px;resize:vertical;white-space:pre-wrap}
 .iss .err{color:var(--bad)}
 .iss .warn{color:var(--warn)}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
+.pin{position:sticky;top:var(--hdr,54px);z-index:4;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:18px;box-shadow:0 6px 8px -6px rgba(0,0,0,.25)}
+.pin #assembled .dark{max-height:150px;overflow-y:auto}
+.chip.cu{border-style:dashed}
+.chip .x{margin-left:6px;color:var(--mute);font-size:11px}
+#cvarForm{display:none;margin-top:8px;align-items:center;gap:6px;flex-wrap:wrap}
+#cvarForm.on{display:flex}
+#cvarForm input{width:170px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;font:12px Consolas,Menlo,monospace}
+#cvarForm .br{font:12px Consolas,Menlo,monospace}
+#cvarErr{color:var(--bad);font-size:12px}
 .chip{font:12px Consolas,Menlo,monospace;border:1px solid #ffcdb9;background:#fff1ec;border-radius:12px;padding:1px 9px;cursor:pointer}
 .mail{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 16px;white-space:pre-wrap}
 .mail .subj{color:var(--mute);border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:8px}
@@ -84,7 +93,7 @@ dialog h2{margin-top:12px}
 </head>
 <body>
 <header class="top">
-  <h1>Spintax Generator</h1><span class="ver">v6</span>
+  <h1>Spintax Generator</h1><span class="ver">v8</span>
   <div class="spacer"></div>
   <button data-a="project-open">Open project</button>
   <button data-a="project-save">Save project</button>
@@ -561,16 +570,17 @@ function viewOriginal(tab) {
 function viewAssembled(tab) {
   const fmt = getFmt();
   const opts = Object.keys(FORMATS).map(k => `<option value="${k}"${settings.formatId === k ? " selected" : ""}>${esc(FORMATS[k].name)}${FORMATS[k].verified ? " (verified)" : ""}</option>`).join("");
-  return `<section><h2><span class="n">2</span>Assembled spintax</h2>
+  return `<section style="margin-bottom:10px"><h2><span class="n">2</span>Assembled spintax</h2>
   <div class="card">
-    <div class="row" style="margin-bottom:8px">
+    <div class="row">
       <label class="f" style="width:290px">Output format<select data-f="format">${opts}</select></label>
       <label class="f" style="flex-direction:row;align-items:center;gap:6px;margin-top:16px"><input type="checkbox" data-f="pad"${settings.pad ? " checked" : ""}> Space inside braces</label>
-      <div class="spacer"></div>
-      <div id="stats" class="row"></div>
     </div>
     <div id="fmtNote"></div>
-    <div id="assembled" style="margin-top:8px"></div>
+  </div></section>
+  <div class="pin" id="pin">
+    <div class="row" style="margin-bottom:8px"><div id="stats" class="row"></div></div>
+    <div id="assembled"></div>
     <div class="row" style="margin-top:8px">
       ${tab.channel === "email" ? `<button data-a="copy" data-w="subj">Copy subject</button>` : ""}
       <button data-a="copy" data-w="body">Copy body</button>
@@ -579,14 +589,37 @@ function viewAssembled(tab) {
       <button data-a="review-local">Check all combinations</button>
       <button data-a="review-claude">Ask Claude to review</button>
     </div>
-    <div id="issues" style="margin-top:8px"></div>
-  </div></section>`;
+    <div class="row" style="margin-top:10px"><span class="hint">Insert variable at the cursor:</span><div class="chips" id="varChips"></div><button class="small" data-a="cvar-open">+ Custom</button></div>
+    <div id="cvarForm"><span class="br">{{</span><input type="text" id="cvarName" placeholder="city" autocomplete="off"><span class="br">}}</span><button class="small" data-a="cvar-add">Add</button><button class="small" data-a="cvar-cancel">Cancel</button><span id="cvarErr"></span></div>
+  </div>
+  <section style="margin-bottom:18px"><div id="issues"></div></section>`;
+}
+
+function renderVarChips() {
+  const box = $("#varChips"); if (!box) return;
+  const base = DEFAULT_SETTINGS.vars;
+  box.innerHTML = settings.vars.map(v => base.includes(v)
+    ? `<span class="chip" data-a="chip" data-v="${esc(v)}">{{${esc(v)}}}</span>`
+    : `<span class="chip cu" data-a="chip" data-v="${esc(v)}">{{${esc(v)}}}<span class="x" data-a="cvar-del" data-v="${esc(v)}" title="Remove this custom variable">x</span></span>`).join("");
+}
+function cvarError(msg) { const e = $("#cvarErr"); if (e) e.textContent = msg || ""; }
+function cvarAdd() {
+  const inp = $("#cvarName"); if (!inp) return;
+  const v = inp.value.trim().replace(/^\{\{|\}\}$/g, "");
+  if (!v) { cvarError("Enter a name"); return; }
+  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(v)) { cvarError("Use letters, numbers, and underscores only"); return; }
+  if (settings.vars.includes(v)) { cvarError("That variable already exists"); return; }
+  settings.vars.push(v); persist(); inp.value = ""; cvarError(""); renderVarChips(); renderDerived();
+  say("Added {{" + v + "}}. Use it in any option box.");
+}
+function cvarDel(v) {
+  if (DEFAULT_SETTINGS.vars.includes(v)) return;
+  settings.vars = settings.vars.filter(x => x !== v); persist(); renderVarChips(); renderDerived();
 }
 
 function viewParas(tab) {
   if (!tab.paras.length) return `<section><h2><span class="n">4</span>Paragraphs and spintax blocks</h2><div class="hint">Nothing yet. Paste a message and click Run Claude or Split only.</div></section>`;
   const idxOf = new Map(allSpins(tab).map((s, i) => [s.id, i]));
-  const chips = settings.vars.map(v => `<span class="chip" data-a="chip" data-v="${esc(v)}">{{${esc(v)}}}</span>`).join("");
   const cards = tab.paras.map((p, pi) => {
     const left = p.segs.map(s => {
       if (s.t === "fixed") return `<span class="fixed" data-seg="${s.id}">${esc(s.text)}</span>`;
@@ -621,7 +654,7 @@ function viewParas(tab) {
       </div></div>`;
   }).join("");
   return `<section><h2><span class="n">4</span>Paragraphs and spintax blocks</h2>
-    <div class="row" style="margin-bottom:8px"><span class="hint">Insert variable at the cursor:</span><div class="chips">${chips}</div></div>${cards}</section>`;
+    ${cards}</section>`;
 }
 function reviewHtml(p) {
   if (!p.review) return "";
@@ -745,6 +778,7 @@ function renderAll() {
   if (helpOpen) { $("#main").innerHTML = viewHelp(); return; }
   const tab = activeTab();
   $("#main").innerHTML = viewOriginal(tab) + viewAssembled(tab) + viewPreview(tab) + viewParas(tab);
+  renderVarChips();
   renderDerived();
 }
 
@@ -856,6 +890,10 @@ function onClick(e) {
     case "opt-del": { const f = findSpin(el.dataset.s); if (f) { f.s.options.splice(+el.dataset.i, 1); if (!f.s.options.length) f.s.options.push(f.s.orig); persist(); renderAll(); } break; }
     case "suggest": suggestOptions(el.dataset.s); break;
     case "chip": insertVar(el.dataset.v); break;
+    case "cvar-open": { const f = $("#cvarForm"); if (f) { f.classList.add("on"); const i = $("#cvarName"); if (i) i.focus(); } break; }
+    case "cvar-cancel": { const f = $("#cvarForm"); if (f) f.classList.remove("on"); cvarError(""); break; }
+    case "cvar-add": cvarAdd(); break;
+    case "cvar-del": cvarDel(el.dataset.v); break;
     case "copy": { const o = assemblePlain(tab, getFmt()); copyText(el.dataset.w === "subj" ? o.subj : el.dataset.w === "body" ? o.body : (tab.channel === "email" ? "Subject: " + o.subj + "\n\n" : "") + o.body); break; }
     case "review-local": {
       let msgs = [];
@@ -1017,7 +1055,12 @@ function docxBytes(ids) {
   const para = (t, bold) => t === "" ? "<w:p/>" : "<w:p><w:r>" + (bold ? "<w:rPr><w:b/></w:rPr>" : "") + "<w:t xml:space=\"preserve\">" + xmlEsc(t) + "</w:t></w:r></w:p>";
   const fmt = getFmt(), body = [];
   if (!fmt.verified) body.push(para("Output format: " + fmt.name), para(""));
-  exportSteps(ids).forEach((st, i) => { if (i) body.push(para(""), para("")); body.push(para(st.name, true), para(""), ...st.lines.map(l => para(l))); });
+  const steps = exportSteps(ids);
+  steps.forEach((st, i) => { if (i) body.push(para(""), para("")); body.push(para(st.name, true), para(""), ...st.lines.map(l => para(l))); });
+  /* Word file only: list the custom variables that the exported steps use, so nobody has to hunt for them in Salesforge. The text export and copy stay clean for pasting. */
+  const usedVars = new Set(steps.flatMap(st => varsIn(st.lines.join(" "))));
+  const customUsed = settings.vars.filter(v => !DEFAULT_SETTINGS.vars.includes(v) && usedVars.has(v));
+  if (customUsed.length) body.push(para(""), para(""), para("Custom variables used", true), para(""), ...customUsed.map(v => para("{{" + v + "}}")));
   const W = "xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"";
   const head = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>";
   return zipStore([
@@ -1121,12 +1164,15 @@ function loadCsv(file) {
 /* ===================== init ===================== */
 document.addEventListener("click", onClick);
 document.addEventListener("input", onInput);
+document.addEventListener("keydown", e => { if (e.target && e.target.id === "cvarName") { if (e.key === "Enter") { e.preventDefault(); cvarAdd(); } else cvarError(""); } });
+function setHdr() { const h = document.querySelector("header.top"); if (h) document.documentElement.style.setProperty("--hdr", h.offsetHeight + "px"); }
+window.addEventListener("resize", setHdr);
 document.addEventListener("change", onChange);
 document.addEventListener("focusin", e => { if (e.target.matches && e.target.matches("[data-opt]")) lastOpt = e.target; });
 document.addEventListener("mousedown", e => { if (e.target.closest && e.target.closest(".chip")) e.preventDefault(); });
 $("#fileProject").addEventListener("change", e => { if (e.target.files[0]) openProjectFile(e.target.files[0]); e.target.value = ""; });
 $("#fileCsv").addEventListener("change", e => { if (e.target.files[0]) loadCsv(e.target.files[0]); e.target.value = ""; });
-restore(); shufflePrev(); renderAll(); askParentForKey();
+restore(); shufflePrev(); setHdr(); renderAll(); askParentForKey();
 window.SPX = { exportSteps, exportHtml, docxBytes, setDashKey, callClaude, exportText, stepReady, get dashKey() { return dashKey; }, get state() { return state; }, get settings() { return settings; }, FORMATS, getFmt, spinStr, parseSpintaxString, spinIssues, comboIssues, comboTextIssues, numTokens, applyClaudeSegments, buildParas, assemblePlain, totalCombos, paraCombos, textFor, applyPlaceholders, serText, fixedSeg, spinSeg, runClaude, renderAll, activeTab, maxLength };
 </script>
 </body>
