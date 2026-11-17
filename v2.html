@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RWT Outreach</title>
 <!--
-RWT OUTREACH DASHBOARD (Salesforge + HubSpot), file version v13 (Spintax tab)
+RWT OUTREACH DASHBOARD (Salesforge + HubSpot), file version v12 (Add prospect button)
 
 How it works
   - The page holds no API keys. Every request goes to the outreach-sync server on Railway,
@@ -25,11 +25,6 @@ Server routes this page expects (see DASHBOARD_API_BRIEF_v5.md)
   POST  /dashboard/deals/:dealId/followups      {"dueAt": "YYYY-MM-DD", "note": "..."}
   GET   /dashboard/contacts/search?q=...        existing HubSpot contacts, max 10, with flags (Add prospect)
   POST  /dashboard/prospects                    {"contactId": "...", "source": "...", "confirm": true} (Add prospect)
-
-Spintax tab
-  The tab loads spintax.html in an iframe (its own page, so its styles and scripts cannot clash with this one).
-  This page hands the dashboard password to the iframe by postMessage (same origin only). The spintax page then calls
-  POST /dashboard/spintax/claude {"kind": "spin" | "suggest" | "review", "payload": {...}} itself. No Claude key is in either page.
 -->
 <style>
 :root{
@@ -58,14 +53,6 @@ button{cursor:pointer}
 .link-btn{background:none;border:none;color:var(--text-2);font-size:12px;margin-top:10px;text-decoration:underline}
 
 #app{display:none}
-.tabs{max-width:1280px;margin:0 auto;padding:0 24px;display:flex;gap:4px}
-.tab{height:34px;padding:0 14px;border:1px solid transparent;border-bottom:2px solid transparent;background:none;color:var(--text-2);font-size:13px;border-radius:var(--radius) var(--radius) 0 0}
-.tab:hover{background:var(--surface-2)}
-.tab.active{color:var(--navy);font-weight:600;border-bottom-color:#FF6633}
-.pane-off{display:none!important}
-#app.on-spintax #range,#app.on-spintax #refreshBtn,#app.on-spintax #updated{display:none}
-#paneSpintax iframe{display:block;width:100%;height:calc(100vh - 100px);min-height:520px;border:0;background:#e9ebee}
-.spx-note{max-width:1280px;margin:0 auto;padding:8px 24px;font-size:13px;color:#7a4b00;background:#fff6e5;border-bottom:1px solid #f3d9a4}
 header{background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
 .hdr{max-width:1280px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .hdr h1{font-size:17px;color:var(--navy);margin-right:auto}
@@ -217,18 +204,9 @@ td select{height:28px;font-size:12px}
       <button class="btn" id="refreshBtn">Refresh</button>
       <button class="btn" id="logoutBtn">Log out</button>
     </div>
-    <nav class="tabs" role="tablist" aria-label="Dashboard sections">
-      <button class="tab active" role="tab" id="tabOutreach" data-tab="outreach" aria-selected="true">Outreach</button>
-      <button class="tab" role="tab" id="tabSpintax" data-tab="spintax" aria-selected="false">Spintax generator</button>
-    </nav>
   </header>
 
-  <div id="paneSpintax" class="pane-off">
-    <div class="spx-note" id="spxNote" hidden>Demo mode: Claude is off here. Log out and sign in with the dashboard password to use it. Editing, checks and export still work.</div>
-    <iframe id="spintaxFrame" title="Spintax generator" data-src="spintax.html"></iframe>
-  </div>
-
-  <main id="paneOutreach">
+  <main>
     <div class="demo-banner" id="demoBanner">Demo data. Nothing here is real and nothing is saved to HubSpot.</div>
 
     <section class="panel">
@@ -1178,46 +1156,16 @@ async function autoLogin() {
 function start() {
   $('gate').style.display = 'none'; $('app').style.display = 'block';
   $('demoBanner').style.display = S.mode === 'demo' ? 'block' : 'none';
-  showTab(location.hash === '#spintax' ? 'spintax' : 'outreach');
   refreshAll();
   if (CONFIG.autoRefreshMinutes > 0) S.timer = setInterval(refreshAll, CONFIG.autoRefreshMinutes * 60000);
 }
 function logout() { saved.clear(); S.key = null; clearInterval(S.timer); location.reload(); }
-
-/* ================= TABS ================= */
-/* Two panes: the Outreach page above and the Spintax generator in an iframe. The iframe loads the first time its tab opens. */
-function showTab(name) {
-  const spx = name === 'spintax';
-  $('paneOutreach').classList.toggle('pane-off', spx);
-  $('paneSpintax').classList.toggle('pane-off', !spx);
-  $('app').classList.toggle('on-spintax', spx);
-  [['tabOutreach', !spx], ['tabSpintax', spx]].forEach(([id, on]) => { $(id).classList.toggle('active', on); $(id).setAttribute('aria-selected', on ? 'true' : 'false'); });
-  if (spx) {
-    const f = $('spintaxFrame');
-    if (!f.getAttribute('src')) f.setAttribute('src', f.dataset.src);
-    $('spxNote').hidden = S.mode !== 'demo';
-    sendKeyToSpintax();
-  }
-  try { history.replaceState(null, '', spx ? '#spintax' : location.pathname + location.search); } catch {}
-}
-/* The password goes only to our own iframe, only on our own origin, and only on request or on load. */
-function sendKeyToSpintax() {
-  const f = $('spintaxFrame');
-  if (S.mode === 'live' && S.key && f && f.contentWindow) f.contentWindow.postMessage({ type: 'spintax-key', key: S.key }, location.origin);
-}
-window.addEventListener('message', e => {
-  const f = $('spintaxFrame');
-  if (e.origin !== location.origin || !f || e.source !== f.contentWindow) return;
-  if (e.data && e.data.type === 'spintax-ready') sendKeyToSpintax();
-});
-$('spintaxFrame').addEventListener('load', sendKeyToSpintax);
 
 /* ================= WIRING ================= */
 $('loginBtn').addEventListener('click', login);
 $('pw').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
 $('demoBtn').addEventListener('click', () => { S.mode = 'demo'; start(); });
 $('logoutBtn').addEventListener('click', logout);
-document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 $('refreshBtn').addEventListener('click', refreshAll);
 $('range').addEventListener('change', () => { S.selectedDay = null; loadChart().catch(e => toast(e.message, true)); });
 $('fTime').addEventListener('change', () => loadTable().catch(e => toast(e.message, true)));
