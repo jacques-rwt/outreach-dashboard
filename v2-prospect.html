@@ -35,7 +35,8 @@ Server routes this page expects (see DASHBOARD_API_BRIEF_v5.md)
   PATCH /dashboard/mandates/:slot               {"name": "..."}
 
 Buyers tab
-  Slot cards (S1, S2, S3) act as tabs. Every dropdown option comes from GET /dashboard/options; the page keeps no status list.
+  Slot cards (S1, S2, S3) act as tabs. Every dropdown option and label comes from GET /dashboard/options; the page only keeps the fixed display order of the chips and summaries.
+  The table shows active statuses by default (chips, filtered in the page from the rows already loaded). Colours for this tab are variables on .buyers-tab.
   Edits, bulk status and Add buyer to slot write to HubSpot through the server and are off unless the server says writeEnabled (BUYERS_WRITE_ENABLED).
   Renaming a mandate only changes its display name; sequences are still matched to a slot by the S1, S2 or S3 prefix.
 
@@ -189,35 +190,60 @@ td select{height:28px;font-size:12px}
 .btn-go:hover{opacity:.92;background:var(--navy)}
 .btn:disabled{opacity:.5;cursor:default}
 
-/* Buyers tab (existing colours and variables only) */
+/* Buyers tab. Layout first, then the blue styling, which is scoped to .buyers-tab so no other tab changes colour. */
 #app.on-buyers #range{display:none}
 .bv-note{background:#fff6e5;color:#7a4b00;border:1px solid #f3d9a4;border-radius:var(--radius);padding:8px 12px;font-size:13px}
 .bv-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .bv-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-width:0}
-.bv-card.on{border-color:var(--navy);box-shadow:0 0 0 1px var(--navy)}
 .bv-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.bv-code{font-weight:600;color:var(--navy);font-size:13px}
+.bv-code{font-weight:600;font-size:13px}
 .bv-icon{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;background:none;border:none;color:var(--text-2);border-radius:var(--radius);flex:none}
 .bv-icon:hover{background:var(--surface-2)}
-.bv-pick{text-align:left;background:none;border:none;padding:0;color:var(--text);display:flex;flex-direction:column;gap:4px;min-height:44px;width:100%;font-size:13px}
-.bv-pick b{font-size:15px;color:var(--navy);font-weight:600;overflow-wrap:anywhere}
+.bv-pick{text-align:left;background:none;border:none;padding:0;color:inherit;display:flex;flex-direction:column;gap:4px;min-height:32px;width:100%;font-size:13px}
+.bv-pick b{font-size:15px;font-weight:600;overflow-wrap:anywhere}
 .bv-pick .muted{overflow-wrap:anywhere}
+.bv-sum{font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.bv-count{background:none;border:none;padding:0;font:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 .bv-edit{display:flex;flex-direction:column;gap:8px}
 .bv-edit input{width:100%;height:36px}
 .bv-edit .row{display:flex;gap:8px;flex-wrap:wrap}
-.bv-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px}
+.bv-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px}
 .bv-bar[hidden]{display:none}
 .bv-tbl td{white-space:normal;max-width:none;vertical-align:top;overflow:visible}
 .bv-tbl select{width:100%;min-width:140px;height:32px;font-size:13px}
 .bv-tbl textarea{width:100%;min-width:160px;height:32px;min-height:32px;padding:6px 8px;border:1px solid var(--border-md);border-radius:var(--radius);background:var(--surface);color:var(--text);font:inherit;font-size:13px;resize:vertical}
 .bv-tbl input[type=checkbox]{width:16px;height:16px;padding:0;margin-top:8px}
-.bv-tbl tr.sel td{background:var(--surface-2)}
 .bv-tbl .nm{overflow-wrap:anywhere}
 .bv-flag{font-size:11px;color:#854F0B;margin-top:2px}
+.bv-ch{display:inline-flex;align-items:center;gap:5px;vertical-align:middle}
+.bv-ic{width:14px;height:14px;flex:none}
+.bv-lt{white-space:nowrap}
 .bv-load{display:flex;align-items:center;justify-content:center;gap:10px;padding:28px;color:var(--text-2)}
 .bv-spin{width:16px;height:16px;border:2px solid var(--border-md);border-top-color:var(--navy);border-radius:50%;animation:bvspin .8s linear infinite}
 @keyframes bvspin{to{transform:rotate(360deg)}}
 .ap-pick select{min-width:160px}
+
+/* Blue styling for the Buyers tab only. The colours are variables on the wrapper; nothing outside .buyers-tab uses them. */
+.buyers-tab{--bt-text:#1B2433;--bt-text2:#4A5568;--bt-head:#F7F8FB;--bt-line:#EEF1F6;--bt-border:#DDE2EA;--bt-blue:#1F4FB4;
+  --bt-bulk-bg:#E8EEFB;--bt-bulk-text:#17408F;--bt-bulk-border:#9FB4E0;--bt-sel:#F2F6FE;--bt-pop:#12203A;color:var(--bt-text)}
+.buyers-tab .muted,.buyers-tab .bv-code,.buyers-tab .bv-icon{color:var(--bt-text2)}
+.buyers-tab .tbl-head h2,.buyers-tab .bv-pick b{color:var(--bt-text)}
+.buyers-tab .panel,.buyers-tab .bv-card{border-color:var(--bt-border)}
+.buyers-tab input,.buyers-tab select,.buyers-tab textarea{border-color:var(--bt-border)}
+.buyers-tab th{background:var(--bt-head);color:var(--bt-text2);border-bottom-color:var(--bt-line)}
+.buyers-tab td{border-bottom-color:var(--bt-line)}
+.buyers-tab .bv-card.on{border-color:var(--bt-blue);box-shadow:0 0 0 1px var(--bt-blue)}
+.buyers-tab .bv-card.on .bv-code{color:var(--bt-blue)}
+.buyers-tab .chip{background:#fff;border-color:var(--bt-border);color:var(--bt-text2)}
+.buyers-tab .chip.on{background:var(--bt-blue);border-color:var(--bt-blue);color:#fff}
+.buyers-tab .btn-go{background:var(--bt-blue);border-color:var(--bt-blue);color:#fff}
+.buyers-tab .btn-go:hover{background:var(--bt-blue);opacity:.92}
+.buyers-tab .bv-edit input{border:2px solid var(--bt-blue)}
+.buyers-tab .bv-count{color:var(--bt-blue)}
+.buyers-tab .bv-bar{background:var(--bt-bulk-bg);color:var(--bt-bulk-text)}
+.buyers-tab .bv-bar .muted{color:var(--bt-bulk-text)}
+.buyers-tab .bv-bar select{border-color:var(--bt-bulk-border)}
+.buyers-tab .bv-tbl tr.sel td{background:var(--bt-sel)}
 
 @media (max-width:900px){
   .split{grid-template-columns:minmax(0,1fr)}
@@ -376,12 +402,12 @@ td select{height:28px;font-size:12px}
     </section>
   </main>
 
-  <main id="paneBuyers" class="pane-off">
+  <main id="paneBuyers" class="pane-off buyers-tab">
     <div class="demo-banner" id="bvDemo">Demo data. Nothing here is real and nothing is saved to HubSpot.</div>
     <div class="bv-note" id="bvOff" hidden>Edits are switched off on the server. You can still look at buyers and rename mandates.</div>
 
     <div class="tbl-head">
-      <h2 style="font-size:18px;color:var(--navy);margin-right:auto">Buyers</h2>
+      <h2 style="font-size:18px;margin-right:auto">Buyers</h2>
       <span class="muted">One place to run each sell-side mandate. Changes save straight to HubSpot.</span>
       <button class="btn" id="bvAddBtn" disabled>Add buyer to slot</button>
     </div>
@@ -393,13 +419,13 @@ td select{height:28px;font-size:12px}
         <h2 id="bvTitle">Buyers</h2>
         <span class="muted" id="bvMeta"></span>
         <input id="bvQ" placeholder="Search buyer or contact" style="width:210px" aria-label="Search buyers">
-        <select id="bvF" aria-label="Filter by slot status"></select>
       </div>
+      <div class="chips" id="bvChips"></div>
       <div class="bv-bar" id="bvBar" hidden></div>
       <div class="tbl-wrap">
         <table class="bv-tbl">
           <thead><tr>
-            <th style="width:3%"><input type="checkbox" id="bvAll" aria-label="Select all buyers that match the filters"></th>
+            <th style="width:3%"><input type="checkbox" id="bvAll" aria-label="Select all buyers shown"></th>
             <th style="width:17%">Buyer company</th>
             <th style="width:14%">Contact</th>
             <th style="width:19%">Slot status</th>
@@ -1208,15 +1234,29 @@ function exportCSV() {
 }
 
 /* ================= BUYERS ================= */
-/* One tab to run each sell-side mandate (slots S1, S2, S3). Every dropdown option comes from GET /dashboard/options;
-   this page keeps no list of statuses. Edits save straight to HubSpot through the server, which refuses a change when
+/* One tab to run each sell-side mandate (slots S1, S2, S3). Every dropdown option and every label comes from GET /dashboard/options;
+   the page only keeps the fixed display order of the chips and summary lines (below). Edits save straight to HubSpot through the server, which refuses a change when
    HubSpot no longer holds the value this page loaded (409): the row then reloads and nothing is overwritten. */
 const BV_PAGE = 100, BV_BULK_MAX = 100;
 const BV = { opened: false, slot: 'S1', opts: null, writeEnabled: false, writeKnown: false,
   names: {}, persisted: true, note: '', lists: { S1: null, S2: null, S3: null },
-  q: '', f: '', shown: BV_PAGE, checked: new Set(), saving: new Set(),
+  q: '', sel: {}, shown: BV_PAGE, checked: new Set(), saving: new Set(),
   editing: null, draft: '', renameErr: '', renameBusy: false, bulkStatus: '', bulkBusy: false, tick: null };
 const CHANNEL = { email: 'Email', linkedin: 'LinkedIn', both: 'Email and LinkedIn' };
+/* Fixed display order. The names always come from the options route; these lists only say which comes first, and which
+   statuses are on by default ("active"). A status HubSpot adds later is listed after these, off by default. */
+const BV_ACTIVE = ['replied', 'teaser_sent_awaiting_reply', 'in_process'];
+const BV_CHIP_ORDER = [...BV_ACTIVE, 'contacted_no_reply', 'not_contacted', 'went_quiet', 'soft_pass_retry', 'passed_do_not_retry', 'exclude'];
+const BV_SUMMARY_ORDER = [...BV_ACTIVE, 'went_quiet', 'soft_pass_retry', 'passed_do_not_retry', 'contacted_no_reply'];
+const BV_STAGE_ORDER = ['teaser sent', 'nda', 'data room', 'eoi submitted', 'management meeting', 'loi'];   /* matched on HubSpot's label */
+const BV_IC = {
+  email: '<svg class="bv-ic" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>',
+  linkedin: '<svg class="bv-ic" aria-hidden="true" viewBox="0 0 24 24" fill="currentColor"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg>'
+};
+/* An envelope for email, the LinkedIn "in" mark for LinkedIn, both for both. */
+const bvChanIcons = (ch, withTitle = true) => CHANNEL[ch]
+  ? `<span class="bv-ch" role="img" aria-label="${CHANNEL[ch]}"${withTitle ? ` title="${CHANNEL[ch]}"` : ''}>${ch === 'both' ? BV_IC.email + BV_IC.linkedin : BV_IC[ch]}</span>` : '';
+const bvFullDate = iso => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
 /* ---- server calls: all hand back { status, body } so the server's own wording can be shown ---- */
 async function bapi(path, opts) {
@@ -1275,25 +1315,34 @@ const bvOpts = (code = BV.slot) => (BV.opts && BV.opts.slots && BV.opts.slots[co
 const bvLabel = (list, v) => { const o = (list || []).find(x => x.value === v); return o ? o.label : v; };
 const bvNameOf = code => (BV.names[code] || '').trim();
 const bvList = () => BV.lists[BV.slot];
-const bvChanWord = b => ({ email: 'by email', linkedin: 'by LinkedIn', both: 'by email and LinkedIn' }[b.channel] || '');
-function bvSummary(code) {
-  const L = BV.lists[code];
-  if (!L || L.state === 'loading') return 'Loading...';
-  if (L.state === 'error') return 'Could not load';
-  const o = bvOpts(code), counts = {};
-  L.buyers.forEach(b => { counts[b.status] = (counts[b.status] || 0) + 1; });
-  const order = o.status.map(x => x.value);
-  Object.keys(counts).forEach(k => { if (!order.includes(k)) order.push(k); });
-  const parts = order.filter(k => counts[k]).map(k => counts[k] + ' ' + bvLabel(o.status, k));
-  if (!parts.length) return 'No buyers yet';
-  return parts.slice(0, 3).join(', ') + (parts.length > 3 ? ', +' + (parts.length - 3) + ' more' : '');
+const bvNorm = x => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+/** The list in the given order (by key); anything not named keeps HubSpot's order after the named ones. */
+function bvOrdered(list, order, key = o => o.value) {
+  const at = o => { const i = order.indexOf(key(o)); return i < 0 ? order.length : i; };
+  return list.map((o, n) => ({ o, n })).sort((a, b) => at(a.o) - at(b.o) || a.n - b.n).map(x => x.o);
 }
+/** The chips that are on for a slot. Default: the active statuses. '*' means Show all (also covers values the options do not list). */
+const bvSel = code => BV.sel[code] || (BV.sel[code] = new Set(BV_ACTIVE));
+const bvShownByChips = (sel, b) => sel.has('*') || sel.has(b.status);
+const bvMatchesQ = (b, q) => !q || (b.name + ' ' + (b.contact ? b.contact.name + ' ' + b.contact.email : '')).toLowerCase().includes(q);
+/** Computed from every row loaded for the slot, whatever the chips say. */
+function bvSlotSummary(code) {
+  const L = BV.lists[code]; if (!L || L.state !== 'ready') return null;
+  const o = bvOpts(code), byStatus = {}, byStage = {};
+  L.buyers.forEach(b => { byStatus[b.status] = (byStatus[b.status] || 0) + 1; if (b.furthest) byStage[b.furthest] = (byStage[b.furthest] || 0) + 1; });
+  const statuses = bvOrdered(o.status, BV_SUMMARY_ORDER).filter(x => BV_SUMMARY_ORDER.includes(x.value) || !BV_CHIP_ORDER.includes(x.value))
+    .map(x => ({ value: x.value, label: x.label, n: byStatus[x.value] || 0 })).filter(x => x.n);
+  const stages = bvOrdered(o.furthest, BV_STAGE_ORDER, x => bvNorm(x.label)).map(x => ({ label: x.label, n: byStage[x.value] || 0 })).filter(x => x.n);
+  return { total: L.buyers.length, active: L.buyers.filter(b => BV_ACTIVE.includes(b.status)).length, statuses, stages };
+}
+/** The rows the table shows: the chips and the search box. A row edited on this page stays (b._pin) until the next reload. */
 function bvFiltered() {
   const L = bvList(); if (!L || L.state !== 'ready') return [];
-  const q = BV.q.trim().toLowerCase();
-  return L.buyers.filter(b => (!BV.f || b.status === BV.f)
-    && (!q || (b.name + ' ' + (b.contact ? b.contact.name + ' ' + b.contact.email : '')).toLowerCase().includes(q)));
+  const q = BV.q.trim().toLowerCase(), sel = bvSel(BV.slot);
+  return L.buyers.filter(b => (bvShownByChips(sel, b) || b._pin) && bvMatchesQ(b, q));
 }
+/** Bulk and select-all act only on rows that are shown: drop any ticked row a new filter hid. */
+function bvPrune() { const vis = new Set(bvFiltered().map(b => b.companyId)); [...BV.checked].forEach(id => { if (!vis.has(id)) BV.checked.delete(id); }); }
 
 /* ---- loading ---- */
 function bvTicker() {
@@ -1341,8 +1390,13 @@ function bvLoadAll() {
 const BV_PENCIL = '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
 function bvDrawCards() {
   $('bvCards').innerHTML = bvCodes().map(c => {
-    const L = BV.lists[c], name = bvNameOf(c);
-    const total = L && L.state === 'ready' ? L.buyers.length + (L.buyers.length === 1 ? ' buyer' : ' buyers') : '';
+    const L = BV.lists[c], name = bvNameOf(c), sm = bvSlotSummary(c);
+    const total = sm ? sm.active + ' active of ' + sm.total : '';
+    const sum = !sm ? `<div class="bv-sum muted">${L && L.state === 'error' ? 'Could not load' : 'Loading...'}</div>`
+      : `<div class="bv-sum">${sm.statuses.length
+          ? sm.statuses.map(x => `<button class="bv-count" data-act="sumfilter" data-slot="${c}" data-status="${esc(x.value)}" title="Show only ${esc(x.label)} in the table">${x.n} ${esc(x.label)}</button>`).join('<span class="muted"> · </span>')
+          : '<span class="muted">No buyers in these statuses</span>'}</div>
+        <div class="bv-sum muted">Furthest: ${sm.stages.length ? sm.stages.map(x => x.n + ' ' + esc(x.label)).join(' · ') : 'none yet'}</div>`;
     const body = BV.editing === c
       ? `<div class="bv-edit"><input id="bvName" aria-label="Mandate name for ${c}" maxlength="60" value="${esc(BV.draft)}">
           ${BV.renameErr ? `<div class="ap-msg err">${esc(BV.renameErr)}</div>` : ''}
@@ -1350,8 +1404,7 @@ function bvDrawCards() {
           <button class="btn" data-act="name-cancel"${BV.renameBusy ? ' disabled' : ''}>Cancel</button></div>
           <div class="muted">Display name only. ${esc(BV.note || 'Sequences are matched to a slot by the S1, S2 or S3 prefix of their name.')}${BV.persisted ? '' : ' This server is not keeping names between restarts.'}</div></div>`
       : `<button class="bv-pick" data-act="pick" data-slot="${c}" aria-pressed="${c === BV.slot}">
-          <b>${name ? esc(name) : '<span class="muted" style="font-weight:400">No mandate name yet</span>'}</b>
-          <span class="muted">${esc(bvSummary(c))}</span></button>`;
+          <b>${name ? esc(name) : '<span class="muted" style="font-weight:400">No mandate name yet</span>'}</b></button>${sum}`;
     return `<div class="bv-card${c === BV.slot ? ' on' : ''}">
       <div class="bv-top"><span class="bv-code">${c}</span>
         <span style="display:flex;align-items:center;gap:6px"><span class="muted">${total}</span>
@@ -1365,14 +1418,10 @@ function bvDrawHead() {
   $('bvAddBtn').disabled = !BV.writeEnabled;
   $('bvAddBtn').title = BV.writeEnabled ? '' : 'Edits are switched off on the server';
   $('bvTitle').textContent = BV.slot + (name ? ' · ' + name : '');
-  const fo = bvOpts().status;
-  $('bvF').innerHTML = '<option value="">All statuses</option>' + fo.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
-  if (BV.f && !fo.some(o => o.value === BV.f)) BV.f = '';
-  $('bvF').value = BV.f;
   let meta = '';
   if (L && L.state === 'ready') {
     const n = bvFiltered().length;
-    meta = L.buyers.length + (L.buyers.length === 1 ? ' buyer' : ' buyers') + (n !== L.buyers.length ? ', ' + n + ' match' : '') + '. Loaded in ' + (L.ms / 1000).toFixed(1) + ' s.'
+    meta = n + ' shown of ' + L.buyers.length + (L.buyers.length === 1 ? ' buyer' : ' buyers') + '. Loaded in ' + (L.ms / 1000).toFixed(1) + ' s.'
       + (L.touchesReady ? '' : ' Last touch dates are still loading on the server: press Refresh in a minute.');
   }
   $('bvMeta').textContent = meta;
@@ -1385,15 +1434,16 @@ function bvRowHtml(b) {
   const stOpts = grey(v('status'), o.status) + o.status.map(x => `<option value="${esc(x.value)}"${x.value === v('status') ? ' selected' : ''}>${esc(x.label)}</option>`).join('');
   const fuOpts = `<option value=""${v('furthest') === '' ? ' selected' : ''}>Not set</option>` + grey(v('furthest'), o.furthest)
     + o.furthest.map(x => `<option value="${esc(x.value)}"${x.value === v('furthest') ? ' selected' : ''}>${esc(x.label)}</option>`).join('');
-  const ch = CHANNEL[b.channel] || '';
-  const contact = b.contact ? `<div class="nm">${esc(b.contact.name || b.contact.email || '(no name)')}</div><div class="muted">${esc(ch || 'No sends yet')}</div>` : '<span class="muted">No contact</span>';
-  const touch = b.lastTouchAt ? `<span title="Last touch ${esc(fmtIso(b.lastTouchAt))} ${esc(bvChanWord(b))}">${esc(fmtIso(b.lastTouchAt))}</span><div class="muted">${esc(ch)}</div>`
+  const sel = bvSel(BV.slot), hiddenAfter = b._pin && !bvShownByChips(sel, b);
+  const contact = b.contact ? `<div class="nm">${esc(b.contact.name || b.contact.email || '(no name)')}</div>${CHANNEL[b.channel] ? `<div>${bvChanIcons(b.channel)}</div>` : '<div class="muted">No sends yet</div>'}` : '<span class="muted">No contact</span>';
+  const touch = b.lastTouchAt
+    ? `<span class="bv-lt" title="${esc((CHANNEL[b.channel] ? CHANNEL[b.channel] + ', last sent ' : 'Last sent ') + bvFullDate(b.lastTouchAt))}">${esc(fmtIso(b.lastTouchAt))} ${bvChanIcons(b.channel, false)}</span>`
     : `<span class="muted">${L && L.touchesReady ? 'No touches' : 'Loading'}</span>`;
   const hs = b.hubspotUrl && S.mode !== 'demo' ? `<a class="hs" target="_blank" rel="noopener" href="${esc(b.hubspotUrl)}" title="Open company in HubSpot">HS</a>` : '';
   const id = esc(b.companyId);
   return `<tr data-id="${id}" class="${BV.checked.has(b.companyId) ? 'sel' : ''}${busy ? ' saving' : ''}">
     <td><input type="checkbox" data-act="chk" aria-label="Select ${esc(b.name)}"${BV.checked.has(b.companyId) ? ' checked' : ''}${BV.writeEnabled && !BV.bulkBusy ? '' : ' disabled'}></td>
-    <td><div class="nm">${esc(b.name || '(no name)')}</div>${b.domain ? `<div class="muted">${esc(b.domain)}</div>` : ''}${b._flag ? `<div class="bv-flag">${esc(b._flag)}</div>` : ''}</td>
+    <td><div class="nm">${esc(b.name || '(no name)')}</div>${b.domain ? `<div class="muted">${esc(b.domain)}</div>` : ''}${b._flag ? `<div class="bv-flag">${esc(b._flag)}</div>` : ''}${hiddenAfter ? '<div class="bv-flag">Hidden by filter after reload</div>' : ''}</td>
     <td>${contact}</td>
     <td><select data-f="status" aria-label="Slot status for ${esc(b.name)}"${dis}>${stOpts}</select></td>
     <td><select data-f="furthest" aria-label="Furthest stage for ${esc(b.name)}"${dis}>${fuOpts}</select></td>
@@ -1411,7 +1461,7 @@ function bvDrawRows() {
     const rows = bvFiltered();
     body.innerHTML = rows.length
       ? rows.slice(0, BV.shown).map(bvRowHtml).join('') + (rows.length > BV.shown ? `<tr><td colspan="8" class="empty"><button class="btn" data-act="more">Show ${Math.min(BV_PAGE, rows.length - BV.shown)} more (${rows.length - BV.shown} not shown)</button></td></tr>` : '')
-      : `<tr><td colspan="8" class="empty">${L.buyers.length ? 'No buyers match these filters.' : 'No buyers in ' + BV.slot + ' yet. Use Add buyer to slot.'}</td></tr>`;
+      : `<tr><td colspan="8" class="empty">${L.buyers.length ? 'No buyers match these filters. Try Show all.' : 'No buyers in ' + BV.slot + ' yet. Use Add buyer to slot.'}</td></tr>`;
   }
   bvSyncAll();
 }
@@ -1434,7 +1484,18 @@ function bvDrawBar() {
     <button class="btn" data-act="bulk-clear"${BV.bulkBusy ? ' disabled' : ''}>Clear selection</button>
     ${BV.writeEnabled ? '' : '<span class="muted">Edits are switched off on the server</span>'}`;
 }
-function bvDrawAll() { bvDrawCards(); bvDrawHead(); bvDrawBar(); bvDrawRows(); bvTicker(); }
+/** One chip per status HubSpot lists for the slot, in the fixed display order, each with its count (rows matching the search box). */
+function bvDrawChips() {
+  const L = bvList(), el = $('bvChips');
+  if (!L || L.state !== 'ready') { el.innerHTML = ''; return; }
+  const q = BV.q.trim().toLowerCase(), sel = bvSel(BV.slot), counts = {};
+  L.buyers.filter(b => bvMatchesQ(b, q)).forEach(b => { counts[b.status] = (counts[b.status] || 0) + 1; });
+  el.innerHTML = '<span class="presets">Show<button class="preset" data-p="active">Active only</button><button class="preset" data-p="all">Show all</button></span><span class="chipsep"></span>'
+    + bvOrdered(bvOpts().status, BV_CHIP_ORDER).map(o => `<button class="chip${sel.has('*') || sel.has(o.value) ? ' on' : ''}" data-k="${esc(o.value)}" aria-pressed="${sel.has('*') || sel.has(o.value)}">${esc(o.label)}<span class="c">${counts[o.value] || 0}</span></button>`).join('');
+}
+function bvDrawAll() { bvDrawCards(); bvDrawHead(); bvDrawChips(); bvDrawBar(); bvDrawRows(); bvTicker(); }
+/** After the chips or the search box change: redraw what depends on them. */
+function bvRefilter() { BV.shown = BV_PAGE; bvPrune(); bvDrawChips(); bvDrawHead(); bvDrawBar(); bvDrawRows(); }
 
 /* ---- edit one field (status, furthest stage or notes) ---- */
 /* The page sends the value it loaded as `expected`. If HubSpot holds something else the server answers 409 with the
@@ -1445,19 +1506,19 @@ async function bvSave(id, field, value) {
   BV.saving.add(id); b._flag = ''; b._pend = { [field]: value }; bvRedrawRow(b);
   try {
     const { status, body } = await BAPI.update(id, { slot: code, changes: { [field]: value }, expected: { [field]: b[field] } });
-    if (status === 200) { Object.assign(b, { status: body.values.status, furthest: body.values.furthest, notes: body.values.notes }); toast('Saved to HubSpot'); }
+    if (status === 200) { Object.assign(b, { status: body.values.status, furthest: body.values.furthest, notes: body.values.notes }); b._pin = true; toast('Saved to HubSpot'); }
     else if (status === 409) bvStale(code, b, body);
     else toast('Not saved. ' + bvError(status, body), true);
   } catch (e) { toast('Not saved. ' + e.message, true); }
   BV.saving.delete(id); b._pend = null;
-  if (code === BV.slot) { bvRedrawRow(b); bvDrawCards(); bvDrawHead(); }
+  if (code === BV.slot) { bvRedrawRow(b); bvDrawCards(); bvDrawChips(); bvDrawHead(); }
 }
 function bvStale(code, b, body) {
   const cur = body.current || {}, L = BV.lists[code];
   if (body.error === 'not_in_slot' || !cur.status) {
     L.buyers = L.buyers.filter(x => x !== b); BV.checked.delete(b.companyId);
     toast(b.name + ' is no longer in ' + code + ' in HubSpot. It was removed from this list and your change was not saved.', true);
-    if (code === BV.slot) { bvDrawRows(); bvDrawBar(); }
+    if (code === BV.slot) { bvDrawCards(); bvDrawChips(); bvDrawHead(); bvDrawRows(); bvDrawBar(); }
     return;
   }
   Object.assign(b, { status: cur.status, furthest: cur.furthest || '', notes: cur.notes || '' });
@@ -1468,7 +1529,8 @@ function bvStale(code, b, body) {
 /* ---- set one status on several rows ---- */
 async function bvBulk() {
   const code = BV.slot, L = BV.lists[code], status = BV.bulkStatus;
-  const rows = L.buyers.filter(b => BV.checked.has(b.companyId));
+  const shown = new Set(bvFiltered().map(b => b.companyId));   /* only rows that are shown */
+  const rows = L.buyers.filter(b => BV.checked.has(b.companyId) && shown.has(b.companyId));
   if (!rows.length || !status || BV.bulkBusy) return;
   BV.bulkBusy = true; bvDrawBar(); bvDrawRows();
   const tally = { updated: 0, unchanged: 0, stale: 0, gone: 0 };
@@ -1481,7 +1543,7 @@ async function bvBulk() {
       for (const r of body.results || []) {
         const b = chunk.find(x => x.companyId === r.companyId); if (!b) continue;
         b._flag = '';
-        if (r.result === 'updated') { b.status = r.status; tally.updated++; }
+        if (r.result === 'updated') { b.status = r.status; b._pin = true; tally.updated++; }
         else if (r.result === 'unchanged') tally.unchanged++;
         else if (r.result === 'stale') { b.status = r.current; b._flag = 'Changed in HubSpot since this page loaded. Row reloaded. Not changed.'; tally.stale++; }
         else { L.buyers = L.buyers.filter(x => x !== b); tally.gone++; }
@@ -1580,7 +1642,11 @@ $('bvCards').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   const code = b.dataset.slot;
   if (b.dataset.act === 'pick' && code !== BV.slot) {
-    BV.slot = code; BV.checked.clear(); BV.bulkStatus = ''; BV.shown = BV_PAGE; BV.f = '';
+    BV.slot = code; BV.checked.clear(); BV.bulkStatus = ''; BV.shown = BV_PAGE;
+    if (!BV.lists[code] || BV.lists[code].state === 'error') bvLoadSlot(code); else bvDrawAll();
+  }
+  if (b.dataset.act === 'sumfilter') {   /* a status count on a card: show that slot, only that status */
+    BV.sel[code] = new Set([b.dataset.status]); BV.slot = code; BV.checked.clear(); BV.bulkStatus = ''; BV.shown = BV_PAGE;
     if (!BV.lists[code] || BV.lists[code].state === 'error') bvLoadSlot(code); else bvDrawAll();
   }
   if (b.dataset.act === 'name-edit') { BV.editing = code; BV.draft = bvNameOf(code); BV.renameErr = ''; bvDrawCards(); const i = $('bvName'); if (i) { i.focus(); i.select(); } }
@@ -1615,8 +1681,18 @@ $('bvBar').addEventListener('click', e => {
   if (b.dataset.act === 'bulk-go') bvBulk();
   if (b.dataset.act === 'bulk-clear') { BV.checked.clear(); BV.bulkStatus = ''; bvDrawBar(); bvDrawRows(); }
 });
-$('bvQ').addEventListener('input', e => { BV.q = e.target.value; BV.shown = BV_PAGE; bvDrawRows(); bvDrawHead(); });
-$('bvF').addEventListener('change', e => { BV.f = e.target.value; BV.shown = BV_PAGE; bvDrawRows(); bvDrawHead(); });
+$('bvQ').addEventListener('input', e => { BV.q = e.target.value; bvRefilter(); });
+$('bvChips').addEventListener('click', e => {
+  const p = e.target.closest('.preset'), c = e.target.closest('.chip');
+  if (p) {
+    BV.sel[BV.slot] = p.dataset.p === 'all' ? new Set(['*', ...bvOpts().status.map(o => o.value)]) : new Set(BV_ACTIVE);
+    return bvRefilter();
+  }
+  if (!c) return;
+  const sel = bvSel(BV.slot); sel.delete('*');   /* choosing chips by hand ends Show all */
+  if (sel.has(c.dataset.k)) sel.delete(c.dataset.k); else sel.add(c.dataset.k);
+  bvRefilter();
+});
 $('bvAddBtn').addEventListener('click', abOpen);
 $('abClose').addEventListener('click', abClose);
 $('abBg').addEventListener('click', e => { if (e.target === $('abBg')) abClose(); });
