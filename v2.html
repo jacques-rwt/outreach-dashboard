@@ -28,7 +28,8 @@ Server routes this page expects (see DASHBOARD_API_BRIEF_v5.md)
   GET   /dashboard/options                      dropdown options read from HubSpot (contact statuses with selectable flag, slot statuses, furthest stages) + writeEnabled
   GET   /dashboard/buyers?slot=S1|S2|S3         the companies with someone enrolled in that slot's Salesforge sequences (503 salesforge_loading: retry; 503 salesforge_not_configured: show the message)
   PATCH /dashboard/buyers/:companyId            {"slot", "changes": {status|furthest|notes}, "expected": {same keys}}  (409 = changed in HubSpot since load)
-  POST  /dashboard/buyers/bulk                  {"slot", "status", "items": [{companyId, expected}]}
+  POST  /dashboard/buyers/:companyId/notes      {"slot", "text", "expected": {"notes"}}  (HubSpot timeline note + dated entry on top of the notes field; 409 stale, 422 notes_field_full, 502 note_failed, 200 partial)
+  POST  /dashboard/buyers/bulk                 {"slot", "status", "items": [{companyId, expected}]}
   GET   /dashboard/companies/search?q=...       existing HubSpot companies, max 10 (Add buyer to slot)
   POST  /dashboard/buyers                       {"slot", "companyId", "status"} (Add buyer to slot: the page does not use it for now)
   GET   /dashboard/mandates                     saved display names of S1, S2, S3
@@ -253,6 +254,34 @@ td select{height:28px;font-size:12px}
 .buyers-tab .bv-bar .muted{color:var(--bt-bulk-text)}
 .buyers-tab .bv-bar select{border-color:var(--bt-bulk-border)}
 .buyers-tab .bv-tbl tr.sel td{background:var(--bt-sel)}
+/* Status colours (Buyers tab only). Tone comes from BV_STATUS_TONE in the script; the select stays native. */
+.buyers-tab .bv-tbl select option{background:#fff;color:var(--bt-text);font-weight:400}
+.buyers-tab .bv-tbl select[data-tone=green]{background:#e2f3e7;border-color:#93cfa6;color:#14532d;font-weight:600}
+.buyers-tab .bv-tbl select[data-tone=grey]{background:#eef0f3;border-color:#cbd2dc;color:#374151}
+.buyers-tab .bv-tbl select[data-tone=amber]{background:#fdf0d8;border-color:#e8b866;color:#6b3f04;font-weight:600}
+.buyers-tab .bv-tbl select[data-tone=red]{background:#fbe3e3;border-color:#e39a9a;color:#7f1d1d;font-weight:600}
+.buyers-tab .bv-tbl select[data-tone=dark]{background:#33383f;border-color:#33383f;color:#fff;font-weight:600}
+.buyers-tab .bv-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;flex:none}
+.buyers-tab .bv-dot[data-tone=green]{background:#1e8e4e}
+.buyers-tab .bv-dot[data-tone=grey]{background:#8a94a3}
+.buyers-tab .bv-dot[data-tone=amber]{background:#d98a0b}
+.buyers-tab .bv-dot[data-tone=red]{background:#c0392b}
+.buyers-tab .bv-dot[data-tone=dark]{background:#33383f}
+.buyers-tab .chip.on .bv-dot{box-shadow:0 0 0 2px #fff}
+/* Notes cell: latest entry, Show all, and a one-line Add. */
+.buyers-tab .bv-ncell{display:flex;flex-direction:column;gap:6px;min-width:200px}
+.buyers-tab .bv-nbox{background:#f6f7f9;border:1px solid #e6e8ec;border-radius:8px;padding:6px 9px;font-size:13px;transition:background .6s}
+.buyers-tab .bv-nbox.hl{background:#eaf1ff}
+.buyers-tab .bv-nlatest{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere}
+.buyers-tab .bv-nfull{max-height:92px;overflow-y:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.buyers-tab .bv-nlink{background:none;border:none;padding:0;margin-top:3px;font-size:12px;color:var(--bt-blue);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.buyers-tab .bv-nadd{display:flex;gap:6px}
+.buyers-tab .bv-ninput{flex:1;min-width:0;height:30px;padding:0 8px;border:1px solid var(--bt-border);border-radius:var(--radius);background:#fff;color:var(--bt-text);font:inherit;font-size:13px}
+.buyers-tab .bv-nbtn{height:30px;padding:0 12px;border:1px solid var(--bt-blue);border-radius:var(--radius);background:#fff;color:var(--bt-blue);font-size:13px;font-weight:600;cursor:pointer}
+.buyers-tab .bv-nbtn:disabled{background:#eef0f3;border-color:#cbd2dc;color:#8a94a3;cursor:default}
+.toast.bv-ok{background:#14532d}
+.toast.bv-bad{background:#7f1d1d}
+.toast .bv-tick{width:15px;height:15px;vertical-align:-3px;margin-right:7px}
 
 @media (max-width:900px){
   .split{grid-template-columns:minmax(0,1fr)}
@@ -1310,6 +1339,16 @@ const CHANNEL = { email: 'Email', linkedin: 'LinkedIn', both: 'Email and LinkedI
 const BV_ACTIVE = ['replied', 'teaser_sent_awaiting_reply', 'in_process'];
 const BV_CHIP_ORDER = [...BV_ACTIVE, 'contacted_no_reply', 'not_contacted', 'went_quiet', 'soft_pass_retry', 'passed_do_not_retry', 'exclude'];
 const BV_SUMMARY_ORDER = [...BV_ACTIVE, 'went_quiet', 'soft_pass_retry', 'passed_do_not_retry', 'contacted_no_reply'];
+/* Status colour by HubSpot internal value (Buyers tab only). Any teaser_sent* value is green; blank counts as not_contacted; unknown = neutral. */
+const BV_STATUS_TONE = {
+  replied: 'green', teaser_sent_awaiting_reply: 'green', in_process: 'green',
+  contacted_no_reply: 'grey', not_contacted: 'grey',
+  went_quiet: 'amber', soft_pass_retry: 'amber',
+  passed_do_not_retry: 'red', exclude: 'dark'
+};
+const bvTone = v => !v ? 'grey' : BV_STATUS_TONE[v] || (String(v).startsWith('teaser_sent') ? 'green' : '');
+const BV_NOTE_MAX = 2000;
+const BV_TICK = '<svg class="bv-tick" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg>';
 const BV_STAGE_ORDER = ['teaser sent', 'nda', 'data room', 'eoi submitted', 'management meeting', 'loi'];   /* matched on HubSpot's label */
 const BV_IC = {
   email: '<svg class="bv-ic" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>',
@@ -1336,13 +1375,16 @@ const BAPI = {
   update: (id, o) => bcall(() => DEMO_BV.update(id, o), `/dashboard/buyers/${encodeURIComponent(id)}`, jbody('PATCH', o)),
   bulk: o => bcall(() => DEMO_BV.bulk(o), '/dashboard/buyers/bulk', jbody('POST', o)),
   search: q => bcall(() => DEMO_BV.search(q), `/dashboard/companies/search?q=${encodeURIComponent(q)}`),
-  add: o => bcall(() => DEMO_BV.add(o), '/dashboard/buyers', jbody('POST', o))
+  add: o => bcall(() => DEMO_BV.add(o), '/dashboard/buyers', jbody('POST', o)),
+  addNote: (id, o) => bcall(() => DEMO_BV.addNote(id, o), `/dashboard/buyers/${encodeURIComponent(id)}/notes`, jbody('POST', o))
 };
 const BV_ERR = {
   buyers_write_disabled: 'Edits are switched off on the server.',
   bad_status: 'HubSpot does not list that status for this slot.', bad_furthest: 'HubSpot does not list that furthest stage for this slot.',
   bad_notes: 'Notes can be up to 5000 characters.', bad_name: 'Use up to 60 characters, with no line breaks or special characters.',
   not_saved: 'The server could not save the name. Try again.', not_found: 'HubSpot has no company with that ID.',
+  bad_text: 'Notes must be 1 to 2000 characters, with no special characters.', note_failed: 'HubSpot did not accept the note.',
+  notes_field_full: 'The notes field is full. Trim it in HubSpot, then try again.',
   bad_query: 'Type between 2 and 100 characters.', bad_items: 'Select between 1 and 100 companies.', bad_slot: 'Unknown slot.'
 };
 function bvError(status, body) {
@@ -1506,6 +1548,22 @@ function bvDrawHead() {
   $('bvGaps').textContent = gaps; $('bvGaps').title = gapsTitle;
   $('bvSub').hidden = !asOf && !gaps;
 }
+/** Entries of the notes field, newest first: split on blank lines. Old content without blank lines is one entry. */
+const bvNoteEntries = t => String(t || '').split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+/** The notes cell: the latest entry in a grey box (read-only), Show all / Show less, and a one-line Add. */
+function bvNotesCell(b, dis) {
+  const ents = bvNoteEntries(b.notes), earlier = ents.length - 1;
+  let box = '';
+  if (ents.length) {
+    const long = ents[0].length > 110 || ents[0].includes('\n');
+    const link = b._exp ? 'Show less' : earlier > 0 ? `Show all (${earlier} earlier)` : long ? 'Show all' : '';
+    box = `<div class="bv-nbox${b._hl ? ' hl' : ''}"><div class="${b._exp ? 'bv-nfull' : 'bv-nlatest'}">${esc(b._exp ? String(b.notes).trim() : ents[0])}</div>`
+      + (link ? `<button type="button" class="bv-nlink" data-act="notes-toggle" aria-expanded="${b._exp ? 'true' : 'false'}">${link}</button>` : '') + '</div>';
+  }
+  const off = dis || b._lock ? ' disabled' : '';
+  return `<div class="bv-ncell">${box}<div class="bv-nadd"><input type="text" class="bv-ninput" maxlength="${BV_NOTE_MAX}" placeholder="Add a note" value="${esc(b._draft || '')}" aria-label="New note for ${esc(b.name)}"${off}>`
+    + `<button type="button" class="bv-nbtn" data-act="note-add"${off}>${BV.saving.has(b.companyId) && b._adding ? 'Adding…' : 'Add'}</button></div></div>`;
+}
 function bvRowHtml(b) {
   const o = bvOpts(), L = bvList();
   const busy = BV.saving.has(b.companyId), dis = !BV.writeEnabled || busy || !o.status.length ? ' disabled' : '';
@@ -1515,7 +1573,7 @@ function bvRowHtml(b) {
   const fuOpts = `<option value=""${v('furthest') === '' ? ' selected' : ''}>Not set</option>` + grey(v('furthest'), o.furthest)
     + o.furthest.map(x => `<option value="${esc(x.value)}"${x.value === v('furthest') ? ' selected' : ''}>${esc(x.label)}</option>`).join('');
   const sel = bvSel(BV.slot), hiddenAfter = b._pin && !bvShownByChips(sel, b);
-  const contact = b.contact ? `<div class="nm">${esc(b.contact.name || b.contact.email || '(no name)')}</div>${CHANNEL[b.channel] ? `<div>${bvChanIcons(b.channel)}</div>` : '<div class="muted">No sends yet</div>'}` : '<span class="muted">No contact</span>';
+  const contact = b.contact ? `<div class="nm">${esc(b.contact.name || b.contact.email || '(no name)')}</div>${CHANNEL[b.channel] ? '' : '<div class="muted">No sends yet</div>'}` : '<span class="muted">No contact</span>';
   const touch = b.lastTouchAt
     ? `<span class="bv-lt" title="${esc((CHANNEL[b.channel] ? CHANNEL[b.channel] + ', last sent ' : 'Last sent ') + bvFullDate(b.lastTouchAt))}">${esc(fmtIso(b.lastTouchAt))} ${bvChanIcons(b.channel, false)}</span>`
     : `<span class="muted">${L && L.touchesReady ? 'No touches' : 'Loading'}</span>`;
@@ -1525,9 +1583,9 @@ function bvRowHtml(b) {
     <td><input type="checkbox" data-act="chk" aria-label="Select ${esc(b.name)}"${BV.checked.has(b.companyId) ? ' checked' : ''}${BV.writeEnabled && !BV.bulkBusy ? '' : ' disabled'}></td>
     <td><div class="nm">${esc(b.name || '(no name)')}</div>${b.domain ? `<div class="muted">${esc(b.domain)}</div>` : ''}${b._flag ? `<div class="bv-flag">${esc(b._flag)}</div>` : ''}${hiddenAfter ? '<div class="bv-flag">Hidden by filter after reload</div>' : ''}</td>
     <td>${contact}</td>
-    <td><select data-f="status" aria-label="Slot status for ${esc(b.name)}"${dis}>${stOpts}</select></td>
+    <td><select data-f="status" data-tone="${bvTone(v('status'))}" aria-label="Slot status for ${esc(b.name)}"${dis}>${stOpts}</select></td>
     <td><select data-f="furthest" aria-label="Furthest stage for ${esc(b.name)}"${dis}>${fuOpts}</select></td>
-    <td><textarea data-f="notes" maxlength="5000" placeholder="Add note" aria-label="Notes for ${esc(b.name)}"${dis}>${esc(v('notes'))}</textarea></td>
+    <td>${bvNotesCell(b, dis)}</td>
     <td>${touch}</td>
     <td>${hs}</td></tr>`;
 }
@@ -1575,7 +1633,7 @@ function bvDrawChips() {
   const q = BV.q.trim().toLowerCase(), sel = bvSel(BV.slot), counts = {};
   L.buyers.filter(b => bvMatchesQ(b, q)).forEach(b => { counts[b.status] = (counts[b.status] || 0) + 1; });
   el.innerHTML = '<span class="presets">Show<button class="preset" data-p="active">Active only</button><button class="preset" data-p="all">Show all</button></span><span class="chipsep"></span>'
-    + bvOrdered(bvOpts().status, BV_CHIP_ORDER).map(o => `<button class="chip${sel.has('*') || sel.has(o.value) ? ' on' : ''}" data-k="${esc(o.value)}" aria-pressed="${sel.has('*') || sel.has(o.value)}">${esc(o.label)}<span class="c">${counts[o.value] || 0}</span></button>`).join('');
+    + bvOrdered(bvOpts().status, BV_CHIP_ORDER).map(o => `<button class="chip${sel.has('*') || sel.has(o.value) ? ' on' : ''}" data-k="${esc(o.value)}" aria-pressed="${sel.has('*') || sel.has(o.value)}">${bvTone(o.value) ? `<span class="bv-dot" data-tone="${bvTone(o.value)}" aria-hidden="true"></span>` : ''}${esc(o.label)}<span class="c">${counts[o.value] || 0}</span></button>`).join('');
 }
 function bvDrawAll() { bvDrawCards(); bvDrawHead(); bvDrawChips(); bvDrawBar(); bvDrawRows(); bvTicker(); }
 /** After the chips or the search box change: redraw what depends on them. */
@@ -1603,6 +1661,33 @@ async function bvSave(id, field, value) {
     else toast('Not saved. ' + bvError(status, body), true);
   } catch (e) { toast('Not saved. ' + e.message, true); }
   BV.saving.delete(id); b._pend = null;
+  if (code === BV.slot) { bvRedrawRow(b); bvDrawCards(); bvDrawChips(); bvDrawHead(); }
+}
+/* ---- add a note: a HubSpot timeline note plus a dated entry on top of the slot's notes field ---- */
+function bvToast(msg, kind) {
+  const t = $('toast'); t.className = 'toast bv-' + kind; t.innerHTML = (kind === 'ok' ? BV_TICK : '') + '<span>' + esc(msg) + '</span>'; t.style.display = 'block';
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', kind === 'ok' ? 3500 : 6000);
+}
+const bvBuyer = id => { const L = BV.lists[BV.slot]; return L && L.buyers ? L.buyers.find(x => x.companyId === id) : null; };
+async function bvAddNote(id) {
+  const code = BV.slot, b = bvBuyer(id);
+  if (!b || BV.saving.has(id) || b._lock) return;
+  const text = (b._draft || '').trim();
+  if (!text) return;
+  BV.saving.add(id); b._adding = true; b._flag = ''; bvRedrawRow(b);   /* Adding... and disabled until the reply: no double notes */
+  try {
+    const { status, body } = await BAPI.addNote(id, { slot: code, text, expected: { notes: b.notes || '' } });
+    if (status === 200 && body.ok) {
+      bvApply(b, body.values); b._draft = ''; b._pin = true; b._hl = true;
+      bvToast('Note added to HubSpot', 'ok');
+      setTimeout(() => { b._hl = false; const el = document.querySelector(`#bvBody tr[data-id="${CSS.escape(id)}"] .bv-nbox`); if (el) el.classList.remove('hl'); }, 2200);
+    } else if (status === 200 && body.partial) {
+      b._lock = true;   /* the note exists: Add stays off until the row reloads, so it cannot be added twice */
+      bvNotice('The note is on the HubSpot timeline, but the notes field was not updated: ' + (body.error || 'unknown reason') + '. Do not add it again.', true);
+    } else if (status === 409) bvStale(code, b, body);   /* typed text stays, nothing saved */
+    else bvToast('Not added. ' + bvError(status, body), 'bad');
+  } catch (e) { bvToast('Not added. ' + e.message, 'bad'); }
+  BV.saving.delete(id); b._adding = false;
   if (code === BV.slot) { bvRedrawRow(b); bvDrawCards(); bvDrawChips(); bvDrawHead(); }
 }
 function bvStale(code, b, body) {
@@ -1759,10 +1844,21 @@ $('bvBody').addEventListener('change', e => {
   const t = e.target, tr = t.closest('tr[data-id]'); if (!tr) return;
   const id = tr.dataset.id;
   if (t.dataset.act === 'chk') { t.checked ? BV.checked.add(id) : BV.checked.delete(id); tr.classList.toggle('sel', t.checked); bvDrawBar(); bvSyncAll(); return; }
-  if (t.dataset.f) bvSave(id, t.dataset.f, t.value);
+  if (t.dataset.f) { if (t.dataset.f === 'status') t.dataset.tone = bvTone(t.value); bvSave(id, t.dataset.f, t.value); }
+});
+$('bvBody').addEventListener('input', e => {
+  if (!e.target.classList.contains('bv-ninput')) return;
+  const tr = e.target.closest('tr[data-id]'), b = tr && bvBuyer(tr.dataset.id); if (b) b._draft = e.target.value;
+});
+$('bvBody').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || !e.target.classList.contains('bv-ninput')) return;
+  e.preventDefault(); const tr = e.target.closest('tr[data-id]'); if (tr) bvAddNote(tr.dataset.id);
 });
 $('bvBody').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
+  const tr = b.closest('tr[data-id]');
+  if (b.dataset.act === 'note-add' && tr) bvAddNote(tr.dataset.id);
+  if (b.dataset.act === 'notes-toggle' && tr) { const r = bvBuyer(tr.dataset.id); if (r) { r._exp = !r._exp; bvRedrawRow(r); } }
   if (b.dataset.act === 'retry') bvLoadSlot(BV.slot);
   if (b.dataset.act === 'more') { BV.shown += BV_PAGE; bvDrawRows(); }
 });
@@ -1861,6 +1957,11 @@ const DEMO_BV = (() => {
       if (b.statusBlank && o.expected.status !== '') return wait({ status: 409, body: { error: 'not_in_slot', slot: o.slot, current: vals(b) } }, 200);   /* blank: the page must say it loaded it blank */
       Object.entries(o.changes).forEach(([k, v]) => { b[k] = v; }); if (o.changes.status) b.statusBlank = false;
       return wait({ status: 200, body: { ok: true, companyId: id, slot: o.slot, values: vals(b) } }, 300); },
+    addNote: (id, o) => { const b = find(o.slot, id); if (!b) return wait({ status: 404, body: { error: 'not_found' } }, 200);
+      if ((b.notes || '') !== o.expected.notes) return wait({ status: 409, body: { error: 'stale', slot: o.slot, fields: ['notes'], current: vals(b) } }, 200);
+      const day = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Edmonton' });
+      b.notes = '[' + day + '] ' + o.text.trim() + (b.notes ? '\n\n' + b.notes : '');
+      return wait({ status: 200, body: { ok: true, noteId: 'demo', companyId: id, slot: o.slot, values: vals(b) } }, 500); },
     bulk: o => {
       const results = o.items.map(i => {
         const b = find(o.slot, i.companyId); if (!b) return { companyId: i.companyId, result: 'not_found' };
