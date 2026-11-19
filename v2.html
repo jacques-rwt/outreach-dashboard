@@ -16,7 +16,7 @@ How it works
 Server routes this page expects (see DASHBOARD_API_BRIEF_v5.md)
   GET   /dashboard/ping
   GET   /dashboard/daily?from&to
-  GET   /dashboard/replies?from&to              rows include wasLead
+  GET   /dashboard/replies?from&to&split=1      rows include wasLead and buyerSlot (S1, S2, S3 or null = BD)
   PATCH /dashboard/contacts/:hubspotId/status   {"status": "interested" | ... | "prospect", "reconnectAt": "YYYY-MM-DD" (with not_now)}
   POST  /dashboard/contacts/:hubspotId/followups {"dueAt": "YYYY-MM-DD"}
   GET   /dashboard/pipeline
@@ -181,6 +181,10 @@ td select{height:28px;font-size:12px}
 .ap-tags{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;flex:none;max-width:45%}
 .tag.warn{border-color:#EF9F27;color:#854F0B}
 .tag.block{border-color:#E9A6A6;color:#791F1F;background:#FCEBEB}
+.tag.buyer{border-color:#9aa9c9;color:#3b4a6b}
+.dot.hollow{background:transparent;box-shadow:none;border:2px solid;box-sizing:border-box}
+.chart-sum{font-size:12px;color:rgba(255,255,255,0.86);margin:0 4px 8px}
+.fnote{margin-top:8px}
 .ap-pick{background:var(--surface-2);border-radius:var(--radius);padding:12px;display:flex;flex-direction:column;gap:8px;font-size:13px}
 .ap-pick .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .ap-msg{font-size:13px;color:var(--text-2)}
@@ -310,17 +314,20 @@ td select{height:28px;font-size:12px}
     <section class="panel">
       <div class="funnel" id="funnel"></div>
       <div class="tally" id="tally"></div>
+      <div class="muted fnote" id="funnelNote"></div>
     </section>
 
     <section class="panel">
       <div class="split">
         <div class="chart-wrap" style="min-width:0">
+          <div class="chart-sum" id="chartSum"></div>
           <div class="lg">
             <span><span class="sq" style="background:linear-gradient(180deg,#4f9bff,#1a4fb0);border:1px solid #6CB4FF"></span>Total sent</span>
             <span><span class="sq" style="background:rgba(255,255,255,0.6)"></span>Email</span>
             <span><span class="sq" style="background:rgba(255,255,255,0.25)"></span>LinkedIn</span>
             <span><span class="dot" style="background:#FF7A1A;box-shadow:0 0 0 1.5px #0f2757"></span>Email reply</span>
             <span><span class="dot" style="background:#84CC16;box-shadow:0 0 0 1.5px #0f2757"></span>LinkedIn reply</span>
+            <span><span class="dot hollow" style="border-color:#cfd8ea"></span>Buyer campaign reply</span>
           </div>
           <div class="chart-box">
             <canvas id="chart" role="img" aria-label="Daily messages sent by email and LinkedIn, with replies shown as dots">Daily messages sent and replies.</canvas>
@@ -564,6 +571,11 @@ function statusKey(r) {
 const labelOf = k => k === 'ooo' ? 'Out of office' : STATUS[k].label;
 const groupOf = r => { const k = statusKey(r); return k === 'ooo' ? 'none' : STATUS[k].group; };
 const isLead = r => !r.ooo && r.wasLead === true;
+/* Buyer campaigns are sequences named S1, S2 or S3 plus a space. The server tags those rows with buyerSlot; a row without it is a BD row. */
+const isBuyer = r => !!r.buyerSlot;
+const bdRows = rs => rs.filter(r => !isBuyer(r));
+const buyerSends = d => (d.buyerEmailSent || 0) + (d.buyerLinkedinSent || 0);
+const buyerLine = (sends, replies) => `of which buyer campaigns: ${sends.toLocaleString()} ${sends === 1 ? 'send' : 'sends'}, ${replies} ${replies === 1 ? 'reply' : 'replies'}`;
 const dotColor = r => r.channel === 'linkedin' ? CONFIG.colors.linkedinDot : CONFIG.colors.emailDot;
 function toast(msg, err) {
   const t = $('toast'); t.textContent = msg; t.className = 'toast' + (err ? ' err' : ''); t.style.display = 'block';
@@ -584,7 +596,7 @@ const API = {
   daily: (f, t) => S.mode === 'demo' ? DEMO.daily(f, t) : api(`/dashboard/daily?from=${f}&to=${t}`).then(d => d.days || []),
   /* GET /dashboard/visits?from&to -> { days: [{ date, emailDirect, social, searchAi, other }] } (new visitor sessions by source) */
   visits: (f, t) => S.mode === 'demo' ? DEMO.visits(f, t) : api(`/dashboard/visits?from=${f}&to=${t}`).then(d => d.days || []),
-  replies: (f, t) => S.mode === 'demo' ? DEMO.replies(f, t) : api(`/dashboard/replies?from=${f}&to=${t}`).then(d => d.replies || []),
+  replies: (f, t) => S.mode === 'demo' ? DEMO.replies(f, t) : api(`/dashboard/replies?from=${f}&to=${t}&split=1`).then(d => d.replies || []),
   pipeline: () => S.mode === 'demo' ? DEMO.pipeline() : api('/dashboard/pipeline'),
   prospects: () => S.mode === 'demo' ? DEMO.prospects() : api('/dashboard/prospects?include=all').then(d => d.prospects || []),
   setStatus: (id, status, reconnectAt) => S.mode === 'demo' ? DEMO.setStatus(id, status, reconnectAt) : api(`/dashboard/contacts/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: JSON.stringify({ status, reconnectAt }) }),
@@ -673,14 +685,36 @@ const DEMO = (() => {
   // Two non-outbound prospects so the source column shows the mix.
   makeDeal({ hubspotId: '9001', name: 'Glen Archer', company: 'Archer Industrial', channel: 'email', repliedAt: addDays(today, -40).toISOString() }, '39985462', { source: 'outbound_cold_call', journey: [{ type: 'call', at: addDays(today, -44).toISOString(), replied: false }, { type: 'call', at: addDays(today, -40).toISOString(), replied: true }] });
   makeDeal({ hubspotId: '9002', name: 'Maya Tran', company: 'Tran Coatings', channel: 'email', repliedAt: addDays(today, -12).toISOString() }, '39985461', { source: 'inbound_website', journey: [{ type: 'meeting', at: addDays(today, -10).toISOString(), replied: true }] });
+  /* Buyer campaigns (S1, S2, S3). Buyer-only people, and four people who replied to a BD and a buyer sequence with the buyer reply first.
+     Added after the BD rows so the rest of the demo data is unchanged. A BD row comes before its buyer row in the list. */
+  const bseqs = [{ id: '61001', name: 'S1 Northline', slot: 'S1' }, { id: '61002', name: 'S2 Harbour Partners', slot: 'S2' }, { id: '61003', name: 'S3 Summit Advisory', slot: 'S3' }];
+  const buyerOnly = [['Lena Voss', 'Voss Capital'], ['Omar Haddad', 'Haddad Partners'], ['Priya Nair', 'Nair Growth Equity'], ['Tomas Kerr', 'Kerr Holdings'], ['Elise Roy', 'Roy Industrial Fund'], ['Ben Archer', 'Archer Equity'],
+    ['Mira Sol', 'Sol Ventures'], ['Colin Wray', 'Wray Capital'], ['Dana Frost', 'Frost Partners'], ['Ivo Marsh', 'Marsh Group'], ['Jules Pike', 'Pike Investments'], ['Nora Quill', 'Quill Capital']];
+  const demoRow = (hid, name, company, seq, back, channel, status, wasLead, buyerSlot) => {
+    const d = addDays(today, -back); d.setHours(10, 15);
+    return { hubspotId: hid, name, company, email: '', sequenceId: seq.id, sequenceName: seq.name, channel, repliedAt: d.toISOString(), status, ooo: false, wasLead, buyerSlot };
+  };
+  buyerOnly.forEach(([name, company], i) => {
+    const status = i % 3 === 0 ? 'interested' : '';
+    replies.push(demoRow(String(id++), name, company, bseqs[i % 3], 1 + (i * 3) % 28, i % 4 === 3 ? 'linkedin' : 'email', status, status === 'interested', bseqs[i % 3].slot));
+  });
+  [['Marta Quist', 'Quist Fabricators'], ['Hugo Lind', 'Lind Hydraulics'], ['Sana Rao', 'Rao Controls'], ['Piet Bos', 'Bos Machining']].forEach(([name, company], k) => {
+    const hid = String(id++), bs = bseqs[k % 3], buyerBack = 24 - k * 4;
+    replies.push(demoRow(hid, name, company, seqs[k % seqs.length], buyerBack - 6, 'email', 'interested', true, null));          /* the BD reply, later */
+    replies.push(demoRow(hid, name, company, bs, buyerBack, k % 2 ? 'linkedin' : 'email', 'interested', true, bs.slot));   /* the buyer reply came first */
+  });
   const find = id => replies.find(x => x.hubspotId === id);
-  const syncContact = (d) => { const r = find(d.contact.hubspotId); if (!r) return; const st = stages.find(s => s.id === d.stageId); r.status = st.kind === 'won' ? 'client' : st.kind === 'lost' ? 'previous_prospect' : 'prospect'; r.wasLead = true; };
+  /* status is contact-level: both rows of a person carry the same status */
+  function mirror(r) { replies.forEach(x => { if (x !== r && x.hubspotId === r.hubspotId) { x.status = r.status; x.wasLead = r.wasLead; } }); }
+  const syncContact = (d) => { const r = find(d.contact.hubspotId); if (!r) return; const st = stages.find(s => s.id === d.stageId); r.status = st.kind === 'won' ? 'client' : st.kind === 'lost' ? 'previous_prospect' : 'prospect'; r.wasLead = true; mirror(r); };
   return {
     daily: (from, to) => dayList(from, to).map(date => {
       const wd = new Date(date + 'T00:00:00').getDay(), weekend = wd === 0 || wd === 6;
       const h = [...date].reduce((a, c) => a + c.charCodeAt(0), 0);
       const e = demoEmail(date);
-      return { date, emailSent: weekend ? 0 : e, linkedinSent: weekend ? 0 : 55 + h % 45 };
+      const em = weekend ? 0 : e, li = weekend ? 0 : 55 + h % 45;
+      /* demo only: part of each day's sends are buyer campaigns */
+      return { date, emailSent: em, linkedinSent: li, buyerEmailSent: Math.round(em * (0.15 + (h % 7) / 40)), buyerLinkedinSent: Math.round(li * (0.1 + (h % 5) / 30)) };
     }),
     visits: (from, to) => dayList(from, to).map(date => {
       const wd = new Date(date + 'T00:00:00').getDay(), weekend = wd === 0 || wd === 6;
@@ -696,7 +730,7 @@ const DEMO = (() => {
       const r = find(hid); if (!r) return { ok: true, status };
       if (r.status === 'opted_out') throw new Error('This contact has opted out and can\'t be changed here.');
       const wasLater = r.status === 'not_now';
-      r.status = status; if (STATUS[status].group !== 'out') r.wasLead = true;
+      r.status = status; if (STATUS[status].group !== 'out') r.wasLead = true; mirror(r);
       if (status === 'not_now') r.nextTask = { id: 'lt' + Date.now(), dueAt: new Date((reconnectAt || ymd(addDays(new Date(), 60))) + 'T16:00:00').toISOString(), subject: 'Reconnect' };
       else if (STATUS[status].group !== 'open' || wasLater) r.nextTask = null; /* auto-close BD queue tasks */
       if (status === 'prospect' && !deals.some(d => d.contact.hubspotId === hid && stages.find(s => s.id === d.stageId).kind === 'open')) {
@@ -716,7 +750,8 @@ const DEMO = (() => {
     /* Add prospect, demo: searches the made-up contacts above with the same rules as the server. */
     searchContacts: q => {
       const s = q.toLowerCase();
-      const hits = replies.filter(r => !r.ooo && (r.name + ' ' + r.company).toLowerCase().includes(s)).slice(0, 10);
+      const seen = new Set();   /* one result per person, even when they have a BD row and a buyer row */
+      const hits = replies.filter(r => !r.ooo && (r.name + ' ' + r.company).toLowerCase().includes(s) && !seen.has(r.hubspotId) && seen.add(r.hubspotId)).slice(0, 10);
       return { status: 200, body: { writeEnabled: true, sources: Object.entries(SOURCE).map(([value, label]) => ({ value, label })), results: hits.map(demoJudge) } };
     },
     addProspect: (cid, source, confirm) => {
@@ -726,7 +761,7 @@ const DEMO = (() => {
       if (r.status === 'prospect' && own) return { status: 200, body: { ok: true, dealId: j.openDealId, dealCreated: false, alreadyProspect: true, stillInSequence: j.flags.inSequenceNow } };
       if (j.blocked) return { status: 409, body: { error: j.blocked.reason, message: j.blocked.message, dealId: j.openDealId } };
       if (j.warnings.length && confirm !== true) return { status: 409, body: { error: 'confirm_required', warnings: j.warnings } };
-      r.status = 'prospect'; r.wasLead = true; r.nextTask = null;
+      r.status = 'prospect'; r.wasLead = true; r.nextTask = null; mirror(r);
       const d = makeDeal(r, '39985460', { source }); d.createdAt = new Date().toISOString(); d.stageEnteredAt = d.createdAt; d.nextTask = null;
       return { status: 200, body: { ok: true, dealId: d.dealId, dealCreated: true, alreadyProspect: false, stillInSequence: j.flags.inSequenceNow } };
     }
@@ -745,6 +780,7 @@ const DEMO = (() => {
       hubspotId: r.hubspotId, name: r.name, company: r.company, title: '',
       email: r.name.split(' ')[0].toLowerCase() + '@' + r.company.split(' ')[0].toLowerCase() + '.ca',
       status: r.status, statusLabel: STATUS[r.status] ? STATUS[r.status].label : '', inSequence: flags.inSequenceNow, flags,
+      buyerCampaignOnly: replies.some(x => x.hubspotId === r.hubspotId && x.buyerSlot) && !replies.some(x => x.hubspotId === r.hubspotId && !x.buyerSlot),
       openDealId: open ? open.dealId : null,
       blocked: blocked ? { reason: blocked, message: AP_DEMO_MSG[blocked] } : null,
       warnings: warnings.map(w => ({ reason: w, message: AP_DEMO_MSG[w] }))
@@ -775,8 +811,8 @@ const dotsPlugin = {
       let y = y0 - 9;
       list.slice(0, maxDots).forEach(r => {
         ctx.beginPath(); ctx.arc(bar.x, y, 5, 0, Math.PI * 2);
-        ctx.fillStyle = dotColor(r); ctx.fill();
-        ctx.lineWidth = 1.5; ctx.strokeStyle = CONFIG.colors.ring; ctx.stroke();
+        if (isBuyer(r)) { ctx.lineWidth = 2; ctx.strokeStyle = dotColor(r); ctx.stroke(); }   /* buyer campaign reply: hollow */
+        else { ctx.fillStyle = dotColor(r); ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = CONFIG.colors.ring; ctx.stroke(); }
         y -= step;
       });
       if (list.length > maxDots) { ctx.fillStyle = CONFIG.colors.tick; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('+' + (list.length - maxDots), bar.x, y + 4); }
@@ -835,8 +871,11 @@ function drawChart() {
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
       plugins: { legend: { display: false }, tooltip: { filter: t => t.datasetIndex > 0, callbacks: { afterBody: it => {
-        const day = S.daily[it[0].dataIndex].date; const n = S.chartReplies.filter(r => !r.ooo && bucketDay(r.repliedAt) === day).length;
-        return n ? n + (n === 1 ? ' reply' : ' replies') : 'No replies'; } } } },
+        const day = S.daily[it[0].dataIndex], rs = S.chartReplies.filter(r => !r.ooo && bucketDay(r.repliedAt) === day.date);
+        const n = rs.length, nb = rs.filter(isBuyer).length, sb = buyerSends(day);
+        const lines = [n ? n + (n === 1 ? ' reply' : ' replies') : 'No replies'];
+        if (sb || nb) lines.push(buyerLine(sb, nb));
+        return lines; } } } },
       scales: {
         x: { stacked: true, grid: { display: false }, ticks: { color: c.tick, font: { size: 11 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
         y: { stacked: true, beginAtZero: true, grace: '12%', grid: { color: c.grid }, border: { display: false }, ticks: { color: c.tick, font: { size: 11 } }, afterFit: sc => { sc.width = Y_AXIS_W; } }
@@ -889,7 +928,7 @@ function drawVisits() {
 
 /* ================= FUNNEL, TALLY, DAY PANEL ================= */
 function drawFunnel() {
-  const rs = S.chartReplies, replied = rs.filter(r => !r.ooo);
+  const all = S.chartReplies, rs = bdRows(all), replied = rs.filter(r => !r.ooo);   /* funnel and tally count BD rows only */
   const leads = rs.filter(isLead);
   const became = leads.filter(r => groupOf(r) === 'converted').length;
   const won = leads.filter(r => statusKey(r) === 'client').length;
@@ -901,6 +940,11 @@ function drawFunnel() {
   const counts = {}; rs.forEach(r => { const k = statusKey(r); counts[k] = (counts[k] || 0) + 1; });
   $('tally').innerHTML = `<span class="tl">All replies<b>${rs.length}</b></span>` + TALLY_ORDER.filter(k => TALLY_ALWAYS.includes(k) || counts[k])
     .map(k => `<span class="tl">${labelOf(k)}<b>${(counts[k] || 0).toLocaleString()}</b></span>`).join('');
+  const nb = all.filter(r => !r.ooo && isBuyer(r)).length;
+  $('funnelNote').textContent = `Buyer campaigns not counted here: ${nb.toLocaleString()} ${nb === 1 ? 'reply' : 'replies'}`;
+  /* the chart is gross: every sequence, buyer campaigns included */
+  const sent = S.daily.reduce((a, d) => a + d.emailSent + d.linkedinSent, 0), bs = S.daily.reduce((a, d) => a + buyerSends(d), 0);
+  $('chartSum').textContent = `Sent ${sent.toLocaleString()} (buyer campaigns ${bs.toLocaleString()}) · Replies ${all.filter(r => !r.ooo).length.toLocaleString()} (buyer ${nb.toLocaleString()})`;
 }
 function drawDay() {
   if (!S.selectedDay) { $('dayTitle').textContent = 'Select a day'; $('daySub').textContent = ''; $('dayList').innerHTML = ''; return; }
@@ -910,12 +954,14 @@ function drawDay() {
   const n = rs.filter(r => !r.ooo).length;
   $('dayTitle').textContent = new Date(S.selectedDay + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   $('daySub').textContent = `${d.emailSent.toLocaleString()} emails · ${d.linkedinSent.toLocaleString()} LinkedIn · ${n} ${n === 1 ? 'reply' : 'replies'}${carried ? ` (${carried} from the weekend)` : ''}`;
+  const nbDay = rs.filter(r => !r.ooo && isBuyer(r)).length, sbDay = buyerSends(d);
+  if (sbDay || nbDay) $('daySub').textContent += ' · ' + buyerLine(sbDay, nbDay);
   if (S.visits) { const v = visitsByDay()[S.selectedDay]; if (v) $('daySub').textContent += ` · ${vTotal(v)} new website ${vTotal(v) === 1 ? 'visitor' : 'visitors'} (${v.emailDirect} email + direct)`; }
   $('dayList').innerHTML = rs.length ? rs.map(r => `
     <div class="day-row">
-      <span class="dot" style="background:${r.ooo ? '#bdbbb4' : dotColor(r)}"></span>
+      <span class="dot${isBuyer(r) ? ' hollow' : ''}" style="${isBuyer(r) ? 'border-color:' + dotColor(r) : 'background:' + (r.ooo ? '#bdbbb4' : dotColor(r))}"></span>
       <div style="min-width:0;flex:1"><div class="nm">${esc(r.name)}</div><div class="co">${esc(r.company)}</div></div>
-      <span class="tag">${labelOf(statusKey(r))}</span>
+      ${isBuyer(r) ? `<span class="tag buyer">Buyer ${esc(r.buyerSlot)}</span>` : ''}<span class="tag">${labelOf(statusKey(r))}</span>
     </div>`).join('') : '<div class="muted">No replies this day.</div>';
 }
 
@@ -1017,6 +1063,7 @@ $('proChips').addEventListener('click', e => {
 /* ================= ADD PROSPECT ================= */
 /* Search existing HubSpot contacts and make one a prospect. The server decides what is blocked or needs a confirm. */
 const AP = { results: [], sources: [], writeEnabled: true, sel: null, source: '', warnings: null, err: '', busy: false, timer: null, seq: 0 };
+const BUYER_ONLY_MSG = 'This contact is only in buyer campaign sequences (S1, S2 or S3), not in a BD sequence. You can still add them as a prospect.';
 const AP_TAG = { opted_out: 'Opted out', closed_won: 'Client', open_deal: 'Open deal', previous_prospect: 'Previous prospect', in_sequence: 'In sequence' };
 function apMsg(text, err) { $('apMsg').textContent = text || ''; $('apMsg').className = 'ap-msg' + (err ? ' err' : ''); }
 function apError(status, body) {
@@ -1050,6 +1097,7 @@ function apDraw() {
   $('apList').innerHTML = AP.results.map(c => {
     const st = STATUS[c.status];
     const tags = [c.blocked && `<span class="tag block">${esc(AP_TAG[c.blocked.reason] || c.blocked.reason)}</span>`,
+      c.buyerCampaignOnly && '<span class="tag warn">Buyer campaigns only</span>',
       ...(c.warnings || []).map(w => `<span class="tag warn">${esc(AP_TAG[w.reason] || w.reason)}</span>`)].filter(Boolean).join('');
     const sub = [c.company, c.email].filter(Boolean).join(' · ');
     return `<button class="ap-row${AP.sel === c ? ' on' : ''}" data-id="${esc(c.hubspotId)}">
@@ -1087,6 +1135,8 @@ async function apAdd(confirm) {
   const c = AP.sel; if (!c || AP.busy) return;
   if ($('apSource')) AP.source = $('apSource').value;
   if (!AP.source) { AP.err = 'Choose a source first.'; return apDrawPick(); }
+  /* The server does not refuse a buyer-campaign-only contact: the page asks first, with the same Continue anyway step. */
+  if (c.buyerCampaignOnly && confirm !== true && !AP.warnings) { AP.warnings = [{ reason: 'buyer_campaign_only', message: BUYER_ONLY_MSG }, ...(c.warnings || [])]; return apDrawPick(); }
   AP.busy = true; AP.err = ''; apDrawPick();
   try {
     const { status, body } = await API.addProspect(c.hubspotId, AP.source, confirm);
@@ -1099,7 +1149,7 @@ async function apAdd(confirm) {
       reloadReplies().catch(() => {});   /* the Leads table shows the new status */
       return;
     }
-    if (status === 409 && body.error === 'confirm_required') AP.warnings = body.warnings || [];
+    if (status === 409 && body.error === 'confirm_required') AP.warnings = [...(c.buyerCampaignOnly ? [{ reason: 'buyer_campaign_only', message: BUYER_ONLY_MSG }] : []), ...(body.warnings || [])];
     else {
       AP.err = apError(status, body); AP.warnings = null;
       if (status === 409 && body.error && AP_TAG[body.error]) { c.blocked = { reason: body.error, message: body.message || AP.err }; if (body.dealId) c.openDealId = body.dealId; AP.err = ''; }
@@ -1139,7 +1189,7 @@ function leadFollowCell(r) {
 }
 function leadRows() {
   const q = $('fQ').value.trim().toLowerCase(), ch = $('fCh').value, seq = $('fSeq').value;
-  return S.tableReplies.filter(r => isLead(r)
+  return S.tableReplies.filter(r => !isBuyer(r) && isLead(r)
     && (ch === 'all' || r.channel === ch) && (seq === 'all' || (r.sequenceId || r.sequenceName) === seq)
     && (!q || (r.name + ' ' + r.company).toLowerCase().includes(q)))
     .sort((a, b) => b.repliedAt.localeCompare(a.repliedAt));
@@ -1227,7 +1277,7 @@ $('leadChips').addEventListener('click', e => {
   const b = e.target.closest('.chip'); if (!b) return; S.leadSel.has(b.dataset.k) ? S.leadSel.delete(b.dataset.k) : S.leadSel.add(b.dataset.k); drawLeads();
 });
 function fillSeqFilter() {
-  const seqs = new Map(); S.tableReplies.forEach(r => r.sequenceName && seqs.set(r.sequenceId || r.sequenceName, r.sequenceName));
+  const seqs = new Map(); bdRows(S.tableReplies).forEach(r => r.sequenceName && seqs.set(r.sequenceId || r.sequenceName, r.sequenceName));
   const cur = $('fSeq').value || 'all';
   $('fSeq').innerHTML = '<option value="all">All sequences</option>' + [...seqs.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([id, n]) => `<option value="${esc(id)}">${esc(n)}</option>`).join('');
   $('fSeq').value = [...$('fSeq').options].some(o => o.value === cur) ? cur : 'all';
