@@ -26,11 +26,11 @@ Server routes this page expects (see DASHBOARD_API_BRIEF_v5.md)
   GET   /dashboard/contacts/search?q=...        existing HubSpot contacts, max 10, with flags (Add prospect)
   POST  /dashboard/prospects                    {"contactId": "...", "source": "...", "confirm": true} (Add prospect)
   GET   /dashboard/options                      dropdown options read from HubSpot (contact statuses with selectable flag, slot statuses, furthest stages) + writeEnabled
-  GET   /dashboard/buyers?slot=S1|S2|S3         the buyers of a slot
+  GET   /dashboard/buyers?slot=S1|S2|S3         the companies with someone enrolled in that slot's Salesforge sequences (503 salesforge_loading: retry; 503 salesforge_not_configured: show the message)
   PATCH /dashboard/buyers/:companyId            {"slot", "changes": {status|furthest|notes}, "expected": {same keys}}  (409 = changed in HubSpot since load)
   POST  /dashboard/buyers/bulk                  {"slot", "status", "items": [{companyId, expected}]}
   GET   /dashboard/companies/search?q=...       existing HubSpot companies, max 10 (Add buyer to slot)
-  POST  /dashboard/buyers                       {"slot", "companyId", "status"} (Add buyer to slot)
+  POST  /dashboard/buyers                       {"slot", "companyId", "status"} (Add buyer to slot: the page does not use it for now)
   GET   /dashboard/mandates                     saved display names of S1, S2, S3
   PATCH /dashboard/mandates/:slot               {"name": "..."}
 
@@ -218,6 +218,11 @@ td select{height:28px;font-size:12px}
 .bv-ch{display:inline-flex;align-items:center;gap:5px;vertical-align:middle}
 .bv-ic{width:14px;height:14px;flex:none}
 .bv-lt{white-space:nowrap}
+.bv-subline{display:flex;flex-wrap:wrap;gap:2px 16px;margin:-6px 0 10px}
+.bv-subline .muted{font-size:11px}
+.bv-msg{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.bv-msg[hidden]{display:none}
+.bv-sum.bv-fu{font-size:11px}
 .bv-load{display:flex;align-items:center;justify-content:center;gap:10px;padding:28px;color:var(--text-2)}
 .bv-spin{width:16px;height:16px;border:2px solid var(--border-md);border-top-color:var(--navy);border-radius:50%;animation:bvspin .8s linear infinite}
 @keyframes bvspin{to{transform:rotate(360deg)}}
@@ -409,7 +414,7 @@ td select{height:28px;font-size:12px}
     <div class="tbl-head">
       <h2 style="font-size:18px;margin-right:auto">Buyers</h2>
       <span class="muted">One place to run each sell-side mandate. Changes save straight to HubSpot.</span>
-      <button class="btn" id="bvAddBtn" disabled>Add buyer to slot</button>
+      <button class="btn" id="bvAddBtn" hidden>Add buyer to slot</button>
     </div>
 
     <div class="bv-cards" id="bvCards" role="group" aria-label="Slots"></div>
@@ -420,6 +425,8 @@ td select{height:28px;font-size:12px}
         <span class="muted" id="bvMeta"></span>
         <input id="bvQ" placeholder="Search buyer or contact" style="width:210px" aria-label="Search buyers">
       </div>
+      <div class="bv-subline" id="bvSub" hidden><span class="muted" id="bvAsOf"></span><span class="muted" id="bvGaps"></span></div>
+      <div class="bv-msg" id="bvMsg" hidden></div>
       <div class="chips" id="bvChips"></div>
       <div class="bv-bar" id="bvBar" hidden></div>
       <div class="tbl-wrap">
@@ -1234,14 +1241,19 @@ function exportCSV() {
 }
 
 /* ================= BUYERS ================= */
-/* One tab to run each sell-side mandate (slots S1, S2, S3). Every dropdown option and every label comes from GET /dashboard/options;
+/* One tab to run each sell-side mandate (slots S1, S2, S3). A slot's list is the companies with someone enrolled in that slot's
+   Salesforge sequences (the server builds it; until Salesforge has loaded it answers 503 and no list is shown).
+   Every dropdown option and every label comes from GET /dashboard/options;
    the page only keeps the fixed display order of the chips and summary lines (below). Edits save straight to HubSpot through the server, which refuses a change when
    HubSpot no longer holds the value this page loaded (409): the row then reloads and nothing is overwritten. */
 const BV_PAGE = 100, BV_BULK_MAX = 100;
 const BV = { opened: false, slot: 'S1', opts: null, writeEnabled: false, writeKnown: false,
   names: {}, persisted: true, note: '', lists: { S1: null, S2: null, S3: null },
   q: '', sel: {}, shown: BV_PAGE, checked: new Set(), saving: new Set(),
-  editing: null, draft: '', renameErr: '', renameBusy: false, bulkStatus: '', bulkBusy: false, tick: null };
+  editing: null, draft: '', renameErr: '', renameBusy: false, bulkStatus: '', bulkBusy: false, tick: null,
+  retry: {}, retryMs: 10000 };   /* retry: slot -> timer while the server says it is still loading Salesforge */
+/* The server shows a blank slot status (nothing sent yet) as Not Contacted and says so with statusBlank; the page keeps that display. */
+const BV_BLANK_SHOWS = 'not_contacted';
 const CHANNEL = { email: 'Email', linkedin: 'LinkedIn', both: 'Email and LinkedIn' };
 /* Fixed display order. The names always come from the options route; these lists only say which comes first, and which
    statuses are on by default ("active"). A status HubSpot adds later is listed after these, off by default. */
@@ -1353,16 +1365,27 @@ function bvTicker() {
   }, 500);
   if (!loading && BV.tick) { clearInterval(BV.tick); BV.tick = null; }
 }
-async function bvLoadSlot(code) {
-  const L = BV.lists[code] = { state: 'loading', buyers: [], t0: performance.now(), ms: null, touchesReady: true, err: '' };
-  bvTicker(); bvDrawAll();
+async function bvLoadSlot(code, retry = false) {
+  clearTimeout(BV.retry[code]);
+  const prior = BV.lists[code];
+  const waiting = retry && prior && prior.state === 'sfloading';   /* a retry while Salesforge loads: the message stays on screen */
+  const L = BV.lists[code] = waiting ? { ...prior, t0: performance.now(), tries: prior.tries + 1 }
+    : { state: 'loading', buyers: [], t0: performance.now(), ms: null, touchesReady: true, err: '', tries: 0, builtAt: null, gaps: null };
+  if (!waiting) { bvTicker(); bvDrawAll(); }
   try {
     const { status, body } = await BAPI.list(code);
     if (BV.lists[code] !== L) return;   /* a newer load replaced this one */
     if (status === 200) {
       L.buyers = body.buyers || []; L.touchesReady = body.touchesReady !== false; L.state = 'ready';
+      L.builtAt = body.salesforgeBuiltAt || null;
+      L.gaps = { noEmail: body.noEmailLeads || 0, unmatched: body.unmatchedEmails || 0, noCompany: body.noCompanyEmails || 0 };
       if (typeof body.writeEnabled === 'boolean') { BV.writeEnabled = body.writeEnabled; BV.writeKnown = true; }
       if (!(code in BV.names) && typeof body.mandateName === 'string') BV.names[code] = body.mandateName;
+    } else if (status === 503 && body && body.error === 'salesforge_loading') {
+      L.state = 'sfloading'; L.err = body.message || '';   /* never a list while Salesforge loads; ask again */
+      BV.retry[code] = setTimeout(() => { if (BV.lists[code] === L) bvLoadSlot(code, true); }, BV.retryMs);
+    } else if (status === 503 && body && body.error === 'salesforge_not_configured') {
+      L.state = 'sfoff'; L.err = bvError(status, body);    /* the server's own message; no retry */
     } else { L.state = 'error'; L.err = bvError(status, body); }
   } catch (e) { if (BV.lists[code] !== L) return; L.state = 'error'; L.err = e.message; }
   L.ms = performance.now() - L.t0;
@@ -1392,11 +1415,11 @@ function bvDrawCards() {
   $('bvCards').innerHTML = bvCodes().map(c => {
     const L = BV.lists[c], name = bvNameOf(c), sm = bvSlotSummary(c);
     const total = sm ? sm.active + ' active of ' + sm.total : '';
-    const sum = !sm ? `<div class="bv-sum muted">${L && L.state === 'error' ? 'Could not load' : 'Loading...'}</div>`
+    const sum = !sm ? `<div class="bv-sum muted">${({ error: 'Could not load', sfloading: 'Loading Salesforge...', sfoff: 'Salesforge not connected' })[L && L.state] || 'Loading...'}</div>`
       : `<div class="bv-sum">${sm.statuses.length
           ? sm.statuses.map(x => `<button class="bv-count" data-act="sumfilter" data-slot="${c}" data-status="${esc(x.value)}" title="Show only ${esc(x.label)} in the table">${x.n} ${esc(x.label)}</button>`).join('<span class="muted"> · </span>')
           : '<span class="muted">No buyers in these statuses</span>'}</div>
-        <div class="bv-sum muted">Furthest: ${sm.stages.length ? sm.stages.map(x => x.n + ' ' + esc(x.label)).join(' · ') : 'none yet'}</div>`;
+        <div class="bv-sum bv-fu muted">Furthest: ${sm.stages.length ? sm.stages.map(x => x.n + ' ' + esc(x.label)).join(' · ') : 'none yet'}</div>`;
     const body = BV.editing === c
       ? `<div class="bv-edit"><input id="bvName" aria-label="Mandate name for ${c}" maxlength="60" value="${esc(BV.draft)}">
           ${BV.renameErr ? `<div class="ap-msg err">${esc(BV.renameErr)}</div>` : ''}
@@ -1415,16 +1438,23 @@ function bvDrawCards() {
 function bvDrawHead() {
   const L = bvList(), name = bvNameOf(BV.slot);
   $('bvOff').hidden = BV.writeEnabled || !BV.writeKnown;
-  $('bvAddBtn').disabled = !BV.writeEnabled;
-  $('bvAddBtn').title = BV.writeEnabled ? '' : 'Edits are switched off on the server';
   $('bvTitle').textContent = BV.slot + (name ? ' · ' + name : '');
-  let meta = '';
+  let meta = '', asOf = '', gaps = '', gapsTitle = '';
   if (L && L.state === 'ready') {
     const n = bvFiltered().length;
-    meta = n + ' shown of ' + L.buyers.length + (L.buyers.length === 1 ? ' buyer' : ' buyers') + '. Loaded in ' + (L.ms / 1000).toFixed(1) + ' s.'
+    meta = n + ' shown of ' + L.buyers.length + ' enrolled. Loaded in ' + (L.ms / 1000).toFixed(1) + ' s.'
       + (L.touchesReady ? '' : ' Last touch dates are still loading on the server: press Refresh in a minute.');
+    if (L.builtAt) asOf = 'Salesforge data as of ' + new Date(L.builtAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const g = L.gaps || {}, bits = [], why = [];
+    if (g.noEmail > 0) { bits.push(g.noEmail + (g.noEmail === 1 ? ' LinkedIn-only lead' : ' LinkedIn-only leads')); why.push('LinkedIn-only leads: enrolled in this slot\'s Salesforge sequences but with no email address, so they cannot be matched to a HubSpot company yet.'); }
+    if (g.unmatched > 0) { bits.push(g.unmatched + (g.unmatched === 1 ? ' email with no HubSpot contact' : ' emails with no HubSpot contact')); why.push('Emails with no HubSpot contact: enrolled in Salesforge, but no contact with that email exists in HubSpot.'); }
+    if (g.noCompany > 0) { bits.push(g.noCompany + (g.noCompany === 1 ? ' contact with no company' : ' contacts with no company')); why.push('Contacts with no company: the HubSpot contact has no associated company, so there is nothing to list.'); }
+    if (bits.length) { gaps = 'Not listed: ' + bits.join(', ') + '.'; gapsTitle = why.join('\n'); }
   }
   $('bvMeta').textContent = meta;
+  $('bvAsOf').textContent = asOf;
+  $('bvGaps').textContent = gaps; $('bvGaps').title = gapsTitle;
+  $('bvSub').hidden = !asOf && !gaps;
 }
 function bvRowHtml(b) {
   const o = bvOpts(), L = bvList();
@@ -1455,13 +1485,17 @@ function bvDrawRows() {
   const L = bvList(), body = $('bvBody');
   if (!L || L.state === 'loading') {
     body.innerHTML = `<tr><td colspan="8"><div class="bv-load"><span class="bv-spin"></span>Loading ${BV.slot} buyers from HubSpot... <b id="bvElapsed">${L ? Math.round((performance.now() - L.t0) / 1000) : 0} s</b></div></td></tr>`;
+  } else if (L.state === 'sfloading') {
+    body.innerHTML = '<tr><td colspan="8"><div class="bv-load"><span class="bv-spin"></span>Still loading Salesforge. Checking again every ' + Math.round(BV.retryMs / 1000) + ' seconds.</div></td></tr>';
+  } else if (L.state === 'sfoff') {
+    body.innerHTML = `<tr><td colspan="8" class="empty">${esc(L.err)}</td></tr>`;
   } else if (L.state === 'error') {
     body.innerHTML = `<tr><td colspan="8" class="empty">Could not load ${BV.slot}: ${esc(L.err)} <button class="btn btn-sm" data-act="retry">Try again</button></td></tr>`;
   } else {
     const rows = bvFiltered();
     body.innerHTML = rows.length
       ? rows.slice(0, BV.shown).map(bvRowHtml).join('') + (rows.length > BV.shown ? `<tr><td colspan="8" class="empty"><button class="btn" data-act="more">Show ${Math.min(BV_PAGE, rows.length - BV.shown)} more (${rows.length - BV.shown} not shown)</button></td></tr>` : '')
-      : `<tr><td colspan="8" class="empty">${L.buyers.length ? 'No buyers match these filters. Try Show all.' : 'No buyers in ' + BV.slot + ' yet. Use Add buyer to slot.'}</td></tr>`;
+      : `<tr><td colspan="8" class="empty">${L.buyers.length ? 'No buyers match these filters (' + L.buyers.length + ' enrolled in ' + BV.slot + '). Try Show all.' : 'No companies are enrolled in a Salesforge sequence whose name starts with ' + BV.slot + ' yet.'}</td></tr>`;
   }
   bvSyncAll();
 }
@@ -1500,13 +1534,21 @@ function bvRefilter() { BV.shown = BV_PAGE; bvPrune(); bvDrawChips(); bvDrawHead
 /* ---- edit one field (status, furthest stage or notes) ---- */
 /* The page sends the value it loaded as `expected`. If HubSpot holds something else the server answers 409 with the
    current values: the row is reloaded from them and the change is NOT made. */
+/** Apply the values HubSpot gave back. A blank slot status stays shown as Not Contacted and the row remembers it is blank. */
+function bvApply(b, v) {
+  b.statusBlank = !v.status; b.status = v.status || BV_BLANK_SHOWS;
+  b.furthest = v.furthest || ''; b.notes = v.notes || '';
+}
 async function bvSave(id, field, value) {
   const code = BV.slot, L = BV.lists[code], b = L && L.buyers.find(x => x.companyId === id);
   if (!b || b[field] === value || BV.saving.has(id)) return;
   BV.saving.add(id); b._flag = ''; b._pend = { [field]: value }; bvRedrawRow(b);
   try {
-    const { status, body } = await BAPI.update(id, { slot: code, changes: { [field]: value }, expected: { [field]: b[field] } });
-    if (status === 200) { Object.assign(b, { status: body.values.status, furthest: body.values.furthest, notes: body.values.notes }); b._pin = true; toast('Saved to HubSpot'); }
+    /* A blank status was loaded as blank: say so (expected status ''), whatever field is edited. */
+    const expected = { [field]: field === 'status' && b.statusBlank ? '' : b[field] };
+    if (b.statusBlank && field !== 'status') expected.status = '';
+    const { status, body } = await BAPI.update(id, { slot: code, changes: { [field]: value }, expected });
+    if (status === 200) { bvApply(b, body.values); b._pin = true; toast('Saved to HubSpot'); }
     else if (status === 409) bvStale(code, b, body);
     else toast('Not saved. ' + bvError(status, body), true);
   } catch (e) { toast('Not saved. ' + e.message, true); }
@@ -1514,49 +1556,53 @@ async function bvSave(id, field, value) {
   if (code === BV.slot) { bvRedrawRow(b); bvDrawCards(); bvDrawChips(); bvDrawHead(); }
 }
 function bvStale(code, b, body) {
-  const cur = body.current || {}, L = BV.lists[code];
-  if (body.error === 'not_in_slot' || !cur.status) {
-    L.buyers = L.buyers.filter(x => x !== b); BV.checked.delete(b.companyId);
-    toast(b.name + ' is no longer in ' + code + ' in HubSpot. It was removed from this list and your change was not saved.', true);
-    if (code === BV.slot) { bvDrawCards(); bvDrawChips(); bvDrawHead(); bvDrawRows(); bvDrawBar(); }
-    return;
-  }
-  Object.assign(b, { status: cur.status, furthest: cur.furthest || '', notes: cur.notes || '' });
+  bvApply(b, body.current || {});   /* a blank status in HubSpot (the old "not in slot" answer) reloads the row the same way */
   b._flag = 'Changed in HubSpot since this page loaded. Row reloaded. Your change was not saved.';
   toast(b.name + ' was changed in HubSpot after this page loaded. Your change was not saved and the row now shows the current values.', true);
 }
 
 /* ---- set one status on several rows ---- */
+/** A message that stays until dismissed (a toast is gone in 3 seconds, too short for a bulk summary). */
+function bvNotice(text, problem) {
+  const el = $('bvMsg');
+  el.hidden = !text; el.className = 'bv-msg ' + (problem ? 'ap-warn' : 'ap-msg');
+  el.innerHTML = text ? '<span>' + esc(text) + '</span><button class="btn btn-sm" data-act="notice-x">Dismiss</button>' : '';
+}
+/* A bulk run can stop after some calls have already updated rows, so "Nothing was changed" would be wrong here. */
+const bvStopped = msg => String(msg).replace(/ Nothing was changed\.$/, '');
 async function bvBulk() {
   const code = BV.slot, L = BV.lists[code], status = BV.bulkStatus;
   const shown = new Set(bvFiltered().map(b => b.companyId));   /* only rows that are shown */
   const rows = L.buyers.filter(b => BV.checked.has(b.companyId) && shown.has(b.companyId));
   if (!rows.length || !status || BV.bulkBusy) return;
-  BV.bulkBusy = true; bvDrawBar(); bvDrawRows();
-  const tally = { updated: 0, unchanged: 0, stale: 0, gone: 0 };
-  let failed = '';
-  for (let i = 0; i < rows.length && !failed; i += BV_BULK_MAX) {
+  BV.bulkBusy = true; bvNotice(''); bvDrawBar(); bvDrawRows();
+  const t = { updated: 0, unchanged: 0, skipped: 0, failed: 0, notSent: 0 };
+  let stopped = '';
+  /* The server takes at most 100 companies a call: send them in order, one call at a time, and stop at the first call that fails. */
+  for (let i = 0; i < rows.length; i += BV_BULK_MAX) {
     const chunk = rows.slice(i, i + BV_BULK_MAX);
     try {
-      const { status: code2, body } = await BAPI.bulk({ slot: code, status, items: chunk.map(b => ({ companyId: b.companyId, expected: b.status })) });
-      if (code2 !== 200) { failed = bvError(code2, body); break; }
+      const { status: sc, body } = await BAPI.bulk({ slot: code, status, items: chunk.map(b => ({ companyId: b.companyId, expected: b.statusBlank ? '' : b.status })) });
+      if (sc !== 200) { stopped = bvStopped(bvError(sc, body)); t.notSent = rows.length - i; break; }
       for (const r of body.results || []) {
         const b = chunk.find(x => x.companyId === r.companyId); if (!b) continue;
         b._flag = '';
-        if (r.result === 'updated') { b.status = r.status; b._pin = true; tally.updated++; }
-        else if (r.result === 'unchanged') tally.unchanged++;
-        else if (r.result === 'stale') { b.status = r.current; b._flag = 'Changed in HubSpot since this page loaded. Row reloaded. Not changed.'; tally.stale++; }
-        else { L.buyers = L.buyers.filter(x => x !== b); tally.gone++; }
+        if (r.result === 'updated') { b.status = r.status; b.statusBlank = false; b._pin = true; t.updated++; }
+        else if (r.result === 'unchanged') t.unchanged++;
+        else if (r.result === 'failed') t.failed++;      /* HubSpot accepted the batch but did not update this one */
+        else t.skipped++;                                /* changed in HubSpot since this page loaded, or no longer found */
       }
-    } catch (e) { failed = e.message; }
+    } catch (e) { stopped = bvStopped(e.message); t.notSent = rows.length - i; break; }
   }
   BV.bulkBusy = false; BV.checked.clear(); BV.bulkStatus = '';
-  const parts = [tally.updated + ' updated'];
-  if (tally.unchanged) parts.push(tally.unchanged + ' already had that status');
-  if (tally.stale) parts.push(tally.stale + ' skipped because they changed in HubSpot (rows reloaded)');
-  if (tally.gone) parts.push(tally.gone + ' no longer in the slot (removed)');
-  toast((failed ? 'Stopped: ' + failed + ' ' : '') + parts.join(', ') + '.', !!failed || tally.stale > 0 || tally.gone > 0);
-  bvDrawAll();
+  const parts = [t.updated + ' updated'];
+  if (t.unchanged) parts.push(t.unchanged + ' already had that status');
+  parts.push(t.skipped + ' skipped (changed in HubSpot since this page loaded, or no longer found)');
+  parts.push(t.failed + ' failed (HubSpot did not update them)');
+  if (t.notSent) parts.push(t.notSent + ' not sent');
+  const problem = !!(stopped || t.skipped || t.failed);
+  bvNotice((stopped ? 'Stopped: ' + stopped + ' ' : '') + parts.join(', ') + '.' + (problem ? ' The list was reloaded from HubSpot.' : ''), problem);
+  if (problem) bvLoadSlot(code); else bvDrawAll();   /* after any skipped or failed row the slot is reloaded, so nothing on screen is a guess */
 }
 
 /* ---- rename a mandate (display name only; works even when edits are switched off) ---- */
@@ -1642,7 +1688,7 @@ $('bvCards').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   const code = b.dataset.slot;
   if (b.dataset.act === 'pick' && code !== BV.slot) {
-    BV.slot = code; BV.checked.clear(); BV.bulkStatus = ''; BV.shown = BV_PAGE;
+    BV.slot = code; BV.checked.clear(); BV.bulkStatus = ''; BV.shown = BV_PAGE; bvNotice('');
     if (!BV.lists[code] || BV.lists[code].state === 'error') bvLoadSlot(code); else bvDrawAll();
   }
   if (b.dataset.act === 'sumfilter') {   /* a status count on a card: show that slot, only that status */
@@ -1681,6 +1727,7 @@ $('bvBar').addEventListener('click', e => {
   if (b.dataset.act === 'bulk-go') bvBulk();
   if (b.dataset.act === 'bulk-clear') { BV.checked.clear(); BV.bulkStatus = ''; bvDrawBar(); bvDrawRows(); }
 });
+$('bvMsg').addEventListener('click', e => { if (e.target.closest('[data-act=notice-x]')) bvNotice(''); });
 $('bvQ').addEventListener('input', e => { BV.q = e.target.value; bvRefilter(); });
 $('bvChips').addEventListener('click', e => {
   const p = e.target.closest('.preset'), c = e.target.closest('.chip');
@@ -1725,7 +1772,8 @@ const DEMO_BV = (() => {
   const mk = (n, status, furthest, notes, days, channel) => ({
     companyId: String(8000 + n), name: 'Demo Buyer ' + n, domain: 'demobuyer' + n + '.example', status, furthest, notes,
     contact: { hubspotId: String(7000 + n), name: first[n % 7] + ' ' + last[(n * 3) % 7], email: 'contact' + n + '@demobuyer' + n + '.example' },
-    channel, lastTouchAt: days == null ? null : new Date(Date.now() - days * 864e5).toISOString(), hubspotUrl: null
+    channel, lastTouchAt: days == null ? null : new Date(Date.now() - days * 864e5).toISOString(), hubspotUrl: null,
+    statusBlank: status === 'not_contacted' && days == null   /* enrolled, nothing sent yet: blank in HubSpot, shown as Not Contacted */
   });
   const db = { S1: [], S2: [], S3: [] };
   const s1 = [['replied', '', 'Asked for the teaser', 2, 'email'], ['contacted_no_reply', '', '', 5, 'linkedin'], ['in_process', 'nda', 'NDA out for signature', 1, 'email'],
@@ -1733,22 +1781,48 @@ const DEMO_BV = (() => {
     ['soft_pass_retry', 'teaser_sent', 'Revisit in Q2', 30, 'email'], ['not_contacted', '', '', null, null], ['contacted_no_reply', '', '', 6, 'email'], ['teaser_sent_awaiting_reply', 'teaser_sent', '', 4, 'email'],
     ['contacted_no_reply', '', '', 8, 'linkedin'], ['not_contacted', '', '', null, null], ['passed_do_not_retry', '', 'Not a fit on size', 40, 'email']];
   s1.forEach((r, i) => db.S1.push(mk(i + 1, ...r)));
+  /* 136 more, so the list is long: 106 of the 150 are active (Select all above 100 rows, in two calls to the server). */
+  const cycle = ['replied', 'teaser_sent_awaiting_reply', 'in_process', 'replied', 'teaser_sent_awaiting_reply', 'contacted_no_reply', 'went_quiet', 'in_process'];
+  for (let n = 15; n <= 150; n++) db.S1.push(mk(n, cycle[n % 8], '', '', 2 + (n % 20), n % 3 === 0 ? 'linkedin' : 'email'));
   [['teaser_sent_awaiting_reply', 'teaser_sent', 'Teaser sent Monday', 3, 'email'], ['replied', '', '', 0, 'email'], ['contacted_no_reply', '', '', 7, 'both']]
-    .forEach((r, i) => db.S2.push(mk(30 + i, ...r)));
+    .forEach((r, i) => db.S2.push(mk(300 + i, ...r)));
+  db.S2.push(mk(310, 'not_contacted', '', '', null, null));
+  db.S3.push(mk(400, 'not_contacted', '', '', null, null), mk(401, 'not_contacted', '', '', null, null));   /* a new slot: enrolled, nothing sent yet */
   const extra = ['Demo Company Alpha', 'Demo Company Beta', 'Demo Company Gamma'].map((n, i) => ({ id: String(8500 + i), name: n, domain: 'democo' + i + '.example', companyStatus: i === 2 ? 'opted_out' : '' }));
   const find = (slot, id) => (db[slot] || []).find(b => b.companyId === id);
-  const vals = b => ({ status: b.status, furthest: b.furthest, notes: b.notes });
+  const vals = b => ({ status: b.statusBlank ? '' : b.status, furthest: b.furthest, notes: b.notes });
+  const failIds = new Set();                    /* for testing: company ids a bulk call reports as failed */
+  const sf = { loading: 0, off: false };        /* for testing: answer 503 salesforge_loading n times, or salesforge_not_configured */
+  const builtAt = new Date(Date.now() - 12 * 60000).toISOString();
   return {
     options: () => wait({ status: 200, body: { writeEnabled: true, contactStatus: CS.map(([value, label, sel]) => ({ value, label, selectable: !!sel })),
       slots: Object.fromEntries(Object.keys(db).map(s => [s, { status: opt(ST), furthest: opt(FU) }])) } }, 250),
     mandates: () => wait({ status: 200, body: { names: { ...names }, persisted: true, note: 'Sequences are matched to a slot by the S1, S2 or S3 prefix of their name, not by this display name.' } }, 150),
     setMandate: (slot, name) => { names[slot] = String(name).replace(/\s+/g, ' ').trim(); return wait({ status: 200, body: { ok: true, names: { ...names }, persisted: true, note: '' } }, 200); },
-    list: slot => wait({ status: 200, body: { slot, writeEnabled: true, mandateName: names[slot], touchesReady: true, count: db[slot].length, buyers: db[slot].map(b => ({ ...b })) } }, slot === 'S1' ? 1500 : 800),
+    failIds, sf,
+    list: slot => {
+      if (sf.off) return wait({ status: 503, body: { error: 'salesforge_not_configured', message: 'Salesforge is not connected on the server, so the list of enrolled buyers cannot be built.' } }, 300);
+      if (sf.loading > 0) { sf.loading--; return wait({ status: 503, body: { error: 'salesforge_loading', message: 'Still loading Salesforge. The list appears as soon as the first pull finishes, usually within a minute or two.' } }, 300); }
+      return wait({ status: 200, body: { slot, writeEnabled: true, mandateName: names[slot], touchesReady: true, salesforgeBuiltAt: builtAt, count: db[slot].length,
+        enrolledEmails: db[slot].length + (slot === 'S1' ? 4 : 0), unmatchedEmails: slot === 'S1' ? 3 : 0, noCompanyEmails: slot === 'S1' ? 1 : 0, noEmailLeads: slot !== 'S3' ? 2 : 0,
+        buyers: db[slot].map(b => ({ ...b })) } }, slot === 'S1' ? 1500 : 800);
+    },
     update: (id, o) => { const b = find(o.slot, id); if (!b) return wait({ status: 404, body: { error: 'not_found' } }, 200);
-      Object.entries(o.changes).forEach(([k, v]) => { b[k] = v; }); return wait({ status: 200, body: { ok: true, companyId: id, slot: o.slot, values: vals(b) } }, 300); },
-    bulk: o => wait({ status: 200, body: { ok: true, slot: o.slot, updated: o.items.length, results: o.items.map(i => { const b = find(o.slot, i.companyId);
-      if (!b) return { companyId: i.companyId, result: 'not_found' }; if (b.status === o.status) return { companyId: i.companyId, result: 'unchanged', status: b.status };
-      b.status = o.status; return { companyId: i.companyId, result: 'updated', status: o.status }; }) } }, 400),
+      if (b.statusBlank && o.expected.status !== '') return wait({ status: 409, body: { error: 'not_in_slot', slot: o.slot, current: vals(b) } }, 200);   /* blank: the page must say it loaded it blank */
+      Object.entries(o.changes).forEach(([k, v]) => { b[k] = v; }); if (o.changes.status) b.statusBlank = false;
+      return wait({ status: 200, body: { ok: true, companyId: id, slot: o.slot, values: vals(b) } }, 300); },
+    bulk: o => {
+      const results = o.items.map(i => {
+        const b = find(o.slot, i.companyId); if (!b) return { companyId: i.companyId, result: 'not_found' };
+        const cur = b.statusBlank ? '' : b.status;
+        if (!cur && i.expected !== '') return { companyId: i.companyId, result: 'not_in_slot', current: '' };
+        if (cur !== i.expected) return { companyId: i.companyId, result: 'stale', current: cur };
+        if (cur === o.status) return { companyId: i.companyId, result: 'unchanged', status: cur };
+        if (failIds.has(i.companyId)) return { companyId: i.companyId, result: 'failed' };
+        b.status = o.status; b.statusBlank = false; return { companyId: i.companyId, result: 'updated', status: o.status };
+      });
+      return wait({ status: 200, body: { ok: true, slot: o.slot, updated: results.filter(r => r.result === 'updated').length, failed: results.filter(r => r.result === 'failed').length, results } }, 400);
+    },
     search: q => { const all = [...Object.entries(db).flatMap(([s, l]) => l.map(b => ({ id: b.companyId, name: b.name, domain: b.domain, companyStatus: '' }))), ...extra];
       const seen = new Map(); all.forEach(c => seen.set(c.id, c));
       const hits = [...seen.values()].filter(c => c.name.toLowerCase().includes(q.toLowerCase())).slice(0, 10)
