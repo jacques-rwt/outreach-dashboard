@@ -122,7 +122,6 @@ button{cursor:pointer}
 .pane-off{display:none!important}
 #app.on-spintax #range,#app.on-spintax #refreshBtn,#app.on-buyers #range{display:none}
 #app.on-spintax .top{display:none}
-.empty-home{border:1px dashed var(--line2);border-radius:10px;min-height:260px;display:grid;place-items:center;text-align:center;color:var(--text3);padding:24px}
 #paneSpintax iframe{display:block;width:100%;height:calc(100vh - 8px);min-height:520px;border:0;background:#e9ebee}
 .spx-note{padding:8px 24px;font-size:13px;color:#7a4b00;background:#fff6e5;border-bottom:1px solid #f3d9a4}
 .muted{color:var(--text-3);font-size:12px}
@@ -359,6 +358,69 @@ th{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--text
 select.int{color:var(--orange);border-color:var(--orange-line)}
 :root[data-theme="dark"] .tag.warn,:root[data-theme="dark"] .bv-flag{border-color:var(--orange-line);color:var(--orange)}
 
+/* Home tab (mockup styles). Flat look only while Home is active: class "flat" on #app. */
+#app.flat{background:#ffffff}
+#app.flat main,#app.flat .top{--surface:#ffffff;--bg:#ffffff;--shadow:none}
+:root[data-theme="dark"] #app.flat{background:#121214}
+:root[data-theme="dark"] #app.flat main,:root[data-theme="dark"] #app.flat .top{--surface:#121214;--bg:#121214;--shadow:none}
+.row h2,.hcard h2{font-size:15px;font-weight:500}
+.h2{font-size:15px;font-weight:500}
+.btn.ghost{border-color:transparent;color:var(--orange)}
+.btn.ghost:hover{background:var(--orange-soft)}
+.hhead{display:flex;align-items:flex-end;gap:40px;flex-wrap:wrap}
+.hh-d{font-size:13px;color:var(--text3)}.hh-big{font-size:30px;font-weight:500}
+.hfunnel{display:flex;gap:28px;flex-wrap:wrap}
+.hfunnel .n{font-size:26px;font-weight:500;line-height:1.1}.hfunnel .l{font-size:12px;color:var(--text3);white-space:nowrap}
+.hfunnel .hot .n{color:var(--orange)}
+.hfunnel .zero .n{color:var(--text3)}
+.hwrap{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch}
+.hl{flex:999 1 560px;min-width:0;display:flex;flex-direction:column;gap:12px}
+.hr{flex:1 1 320px;min-width:300px;display:flex;flex-direction:column;gap:12px}
+.hcard{display:flex;flex-direction:column;gap:12px;min-width:0}
+.hl .hcard{flex:1}
+.hr .hcard{flex:none}
+.hl .hc-ch{flex:1;min-height:150px}
+.donut.mid{width:120px;height:120px}.donut.mid>div{width:86px;height:86px}
+/* skinny bar charts */
+.hc-ch{display:flex;gap:6px}
+.hc-yax{flex:none;width:26px;position:relative;font-size:10px;color:var(--text3);text-align:right}
+.hc-yax span{position:absolute;right:0;transform:translateY(50%)}
+.hc-plot{flex:1;min-width:0;position:relative}
+.hc-grid{position:absolute;left:0;right:0;border-top:1px solid var(--line)}
+.hc-cols{position:absolute;inset:0;display:flex;align-items:flex-end;gap:4px}
+.hc-col{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;position:relative}
+.hc-col.dim{opacity:.3}
+.hc-stk{display:flex;flex-direction:column;min-height:3px;width:56%;max-width:16px;align-self:center;border-radius:3px 3px 0 0;overflow:hidden}
+.hc-reps{display:flex;gap:6px;height:56px}
+.hc-reps .lbl{flex:none;width:26px;font-size:10px;color:var(--text3);text-align:right;padding-top:2px}
+.hc-reps .hc-cols{position:static;border-top:1px solid var(--line);align-items:flex-start;flex:1}
+.hc-rb{background:linear-gradient(to bottom,#0F9488,rgba(44,196,178,.45));width:56%;max-width:16px;align-self:center;border-radius:0 0 3px 3px}
+.hc-xax{display:flex;gap:6px}.hc-xax i{flex:none;width:26px}
+.hc-xax div{flex:1;display:flex;justify-content:space-between;gap:8px;white-space:nowrap;font-size:11px;color:var(--text3)}
+/* queue */
+.hq{display:flex;flex-direction:column;gap:6px;flex:1}
+.hq-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hq-hd .btn{flex:none}
+.hq-hd svg{width:16px;height:16px;color:var(--orange)}
+.hq-it{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line)}
+.hq-it .nm{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hq-it .co{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qpill{font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid var(--orange);color:var(--orange);white-space:nowrap}
+/* mandates */
+.hcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.hmc{all:unset;box-sizing:border-box;cursor:pointer;background:var(--surface);border-radius:10px;padding:14px 16px;display:flex;gap:14px;align-items:center;box-shadow:var(--shadow);min-width:0}
+.hmc:hover{box-shadow:0 0 0 1.5px var(--orange)}
+.hmc:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+.hmc .mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.hmc .t{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hmc .code{font-size:11px;color:var(--text3)}.hmc .nmm{font-size:16px;font-weight:500}
+.hmc .sum{display:flex;flex-wrap:wrap;gap:2px 12px;font-size:12px;color:var(--text2)}
+/* prospects on Home: about four rows, then scroll */
+.hscroll{max-height:250px;overflow:auto;border-radius:6px}
+.hscroll table{min-width:900px}
+.hscroll th{position:sticky;top:0;background:var(--surface);z-index:1}
+[hidden]{display:none!important}
+
 /* Dark-mode fixes for colours that are still hard-coded light. The tabs are restyled properly in later steps. */
 :root[data-theme="dark"] .tag.block{background:rgba(255,123,107,.14);border-color:rgba(255,123,107,.4);color:#ff9a8c}
 :root[data-theme="dark"] .tag.buyer{border-color:#4a5575;color:#9fb0d8}
@@ -435,7 +497,58 @@ select.int{color:var(--orange);border-color:var(--orange-line)}
 
   <main id="paneHome" class="pane-off">
     <div class="demo-banner" id="homeDemo">Demo data. Nothing here is real and nothing is saved to HubSpot.</div>
-    <div class="empty-home">The Home overview is coming next. Use Outreach and Buyers in the meantime.</div>
+    <div class="hhead">
+      <div><div class="hh-d" id="hDate"></div><div class="hh-big" id="hBig">&nbsp;</div></div>
+      <div class="grow"></div>
+      <div class="hfunnel" id="hFunnel"></div>
+    </div>
+    <div class="hwrap">
+      <div class="hl">
+        <section class="panel hcard">
+          <div class="row"><h2>Activity</h2>
+            <div class="lg"><span><i class="sw" style="background:var(--g-ora)"></i>Email sent</span><span><i class="sw" style="background:var(--g-sil)"></i>LinkedIn sent</span><span><i class="sw" style="background:var(--g-teal)"></i>Replies</span></div>
+            <div class="grow"></div><div class="muted" id="actInfo"></div></div>
+          <div class="hc-ch"><div class="hc-yax" id="hay"></div><div class="hc-plot" id="haplot"></div></div>
+          <div class="hc-reps"><div class="lbl">Replies</div><div class="hc-cols" id="harep"></div></div>
+          <div class="hc-xax"><i></i><div id="haxl"></div></div>
+        </section>
+        <section class="panel hcard">
+          <div class="row"><h2>New website visitors</h2><div class="grow"></div><span class="muted" id="hvlbl"></span><span style="font-size:22px" id="hvnum"></span></div>
+          <div class="lg" id="hvleg"></div>
+          <div class="hc-ch" id="hvch"><div class="hc-yax" id="hvy"></div><div class="hc-plot" id="hvplot"></div></div>
+          <div class="hc-xax" id="hvx"><i></i><div id="hvxl"></div></div>
+          <div class="muted" id="hvoff" hidden>Website visits aren't connected yet.</div>
+        </section>
+      </div>
+      <div class="hr">
+        <section class="panel hcard">
+          <div class="row"><h2>Reply labels</h2><span class="muted" id="hLabN"></span></div>
+          <div class="row" style="flex-wrap:nowrap;gap:16px"><div class="donut mid" id="donut2" role="img" aria-label="Reply labels"><div><span id="donut2N" style="font-size:22px;font-weight:500">0</span><span style="font-size:10px;color:var(--text3)">replies</span></div></div><div class="dl" id="dl2"></div></div>
+        </section>
+        <section class="panel hq" id="hQueue"></section>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="row"><span class="h2">Buyer mandates</span><span class="muted">Active buyers per mandate</span><div class="grow"></div><button class="btn ghost" data-go="buyers">Open Buyers &rarr;</button></div>
+      <div class="hcards" id="hMand"></div>
+    </div>
+    <section class="panel hcard">
+      <div class="row"><h2>Prospects</h2><span class="tag" id="hProN"></span><div class="grow"></div><button class="btn ghost sm" data-go="outreach">Table view &rarr;</button><button class="btn sm" id="hAddPro">Add prospect</button></div>
+      <div class="hscroll">
+        <table>
+          <thead><tr>
+            <th style="width:21%">Company</th>
+            <th style="width:17%">Stage</th>
+            <th style="width:9%">In stage</th>
+            <th style="width:12%">Source</th>
+            <th style="width:22%">Journey to prospect</th>
+            <th style="width:15%">Follow-up</th>
+            <th style="width:4%"></th>
+          </tr></thead>
+          <tbody id="homeProBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
   </main>
 
   <main id="paneOutreach">
@@ -989,6 +1102,17 @@ function drawChart() {
 $('scols').addEventListener('click', e => { const b = e.target.closest('.scol'); if (b) selectDay(b.dataset.d); });
 
 /* ================= TALLY, RATES, DONUT, DAY CARD ================= */
+/** Paints both reply-label donuts (Outreach and Home) from [labelKey, count] pairs. */
+function paintDonut(parts) {
+  const tot = parts.reduce((a, p) => a + p[1], 0); let acc = 0;
+  const bg = tot ? 'conic-gradient(' + parts.map(([k, v]) => {
+    const a = acc / tot * 100; acc += v; const b = acc / tot * 100, c = LABEL_COLOR[k] || '#9CA3AF', gap = parts.length > 1 ? .9 : 0;
+    return `${c} ${a.toFixed(2)}% ${(b - gap).toFixed(2)}%, transparent ${(b - gap).toFixed(2)}% ${b.toFixed(2)}%`;
+  }).join(', ') + ')' : 'var(--line)';
+  const list = parts.map(([k, v]) => `<span><i style="background:${LABEL_COLOR[k] || '#9CA3AF'}"></i>${labelOf(k)}<b>${v.toLocaleString()}</b></span>`).join('');
+  [['donut', 'donutN', 'dl'], ['donut2', 'donut2N', 'dl2']].forEach(([d, n, l]) => { $(d).style.background = bg; $(n).textContent = tot.toLocaleString(); $(l).innerHTML = list; });
+  $('hLabN').textContent = tot.toLocaleString() + (tot === 1 ? ' reply' : ' replies');
+}
 function drawSummary() {
   const all = S.chartReplies, rs = bdRows(all);   /* tally and donut count BD rows only; the chart and the two rates are gross (every sequence) */
   const counts = {}; rs.forEach(r => { const k = statusKey(r); counts[k] = (counts[k] || 0) + 1; });
@@ -1004,13 +1128,8 @@ function drawSummary() {
   $('st2s').textContent = `${n.toLocaleString()} ${n === 1 ? 'reply' : 'replies'} · ${nb.toLocaleString()} buyer`;
   const parts = [...TALLY_ORDER.filter(k => counts[k]), ...Object.keys(counts).filter(k => !TALLY_ORDER.includes(k))].map(k => [k, counts[k]]);
   const tot = parts.reduce((a, p) => a + p[1], 0);
-  let acc = 0;
-  $('donut').style.background = tot ? 'conic-gradient(' + parts.map(([k, v]) => {
-    const a = acc / tot * 100; acc += v; const b = acc / tot * 100, c = LABEL_COLOR[k] || '#9CA3AF', gap = parts.length > 1 ? .9 : 0;
-    return `${c} ${a.toFixed(2)}% ${(b - gap).toFixed(2)}%, transparent ${(b - gap).toFixed(2)}% ${b.toFixed(2)}%`;
-  }).join(', ') + ')' : 'var(--line)';
-  $('donutN').textContent = tot.toLocaleString();
-  $('dl').innerHTML = parts.map(([k, v]) => `<span><i style="background:${LABEL_COLOR[k] || '#9CA3AF'}"></i>${labelOf(k)}<b>${v.toLocaleString()}</b></span>`).join('');
+  paintDonut(parts);
+  drawHome();
 }
 function drawDay() {
   if (!S.selectedDay) { $('dayTitle').textContent = 'Selected day'; $('daySub').textContent = ''; $('dayList').innerHTML = '<div class="muted">Click a bar above to see that day’s replies.</div>'; return; }
@@ -1058,9 +1177,13 @@ function drawProspects() {
   const open = S.deals.filter(d => ['open', 'parked'].includes(stageKind(d))).length;
   $('proChips').innerHTML = presetsHtml(PRO_PRESETS) + S.stages.map(s => `<button class="chip${S.proSel.has(s.id) ? ' on' : ''}" data-id="${s.id}">${esc(s.label)}<span class="c">${counts[s.id] || 0}</span></button>`).join('');
   $('proTitle').innerHTML = `Prospects <span class="tag">${open} open</span>`;
-  const rows = S.deals.filter(d => S.proSel.has(d.stageId))
-    .sort((a, b) => (stageById(b.stageId)?.order ?? 0) - (stageById(a.stageId)?.order ?? 0) || (stageEntered(b) ? daysSince(stageEntered(b)) : 0) - (stageEntered(a) ? daysSince(stageEntered(a)) : 0));
+  const rows = proRowsFor(S.proSel);
   $('proBody').innerHTML = rows.length ? rows.map(proRow).join('') : '<tr><td colspan="7" class="empty">No deals here.</td></tr>';
+  drawHomePros();
+}
+function proRowsFor(set) {
+  return S.deals.filter(d => set.has(d.stageId))
+    .sort((a, b) => (stageById(b.stageId)?.order ?? 0) - (stageById(a.stageId)?.order ?? 0) || (stageEntered(b) ? daysSince(stageEntered(b)) : 0) - (stageEntered(a) ? daysSince(stageEntered(a)) : 0));
 }
 function proRow(d) {
   const st = stageById(d.stageId), kind = stageKind(d), entered = stageEntered(d), days = entered ? daysSince(entered) : null;
@@ -1102,24 +1225,26 @@ async function onStageChange(dealId, stageId, reconnectAt) {
   } catch (e) { d.stageId = prev; toast('Could not save. ' + e.message, true); }
   drawProspects();
 }
-$('proBody').addEventListener('change', e => {
+const proChange = e => {
   const el = e.target; if (el.dataset.act !== 'stage') return;
   const st = stageById(el.value);
   if (isParked(st)) { S.pendingLong = el.dataset.id; S.deals.find(x => x.dealId === el.dataset.id)._pendingStage = el.value; drawProspects(); return; }
   onStageChange(el.dataset.id, el.value);
-});
-$('proBody').addEventListener('click', async e => {
+};
+[$('proBody'), $('homeProBody')].forEach(tb => tb.addEventListener('change', proChange));
+const proClick = async e => {
   const b = e.target.closest('button'); if (!b) return;
   const id = b.dataset.id, d = S.deals.find(x => x.dealId === id);
   if (b.dataset.act === 'lt-cancel') { S.pendingLong = null; drawProspects(); }
-  if (b.dataset.act === 'lt-save') { const v = $('lt-' + id).value; if (!v) return toast('Pick a reconnect date.', true); await onStageChange(id, d._pendingStage, v); }
+  if (b.dataset.act === 'lt-save') { const v = b.closest('tr').querySelector('input[type=date]').value; if (!v) return toast('Pick a reconnect date.', true); await onStageChange(id, d._pendingStage, v); }
   if (b.dataset.act === 'fu-add') { d._addFu = true; drawProspects(); }
   if (b.dataset.act === 'fu-save') {
-    const v = $('fu-' + id).value; if (!v) return toast('Pick a date.', true);
+    const v = b.closest('tr').querySelector('input[type=date]').value; if (!v) return toast('Pick a date.', true);
     try { d.nextTask = await API.followup(id, v); d._addFu = false; toast('Follow-up task added to the BD Tasks queue'); } catch (err) { toast('Could not save. ' + err.message, true); }
     drawProspects();
   }
-});
+};
+[$('proBody'), $('homeProBody')].forEach(tb => tb.addEventListener('click', proClick));
 $('proChips').addEventListener('click', e => {
   const p = e.target.closest('.preset'); if (p) { S.proSel = new Set(presetStages(p.dataset.p)); return drawProspects(); }
   const b = e.target.closest('.chip'); if (!b) return; S.proSel.has(b.dataset.id) ? S.proSel.delete(b.dataset.id) : S.proSel.add(b.dataset.id); drawProspects();
@@ -1651,6 +1776,7 @@ function bvDrawCards() {
       ${body}</div>
       <div class="ring" role="img" aria-label="${sm ? pct + ' percent active' : 'Not loaded yet'}" style="background:conic-gradient(from -90deg,var(--orange) 0 ${pct}%,var(--line) ${pct}% 100%)"><div><b>${sm && sm.total ? pct + '%' : '\u2013'}</b><small>active</small></div></div></div>`;
   }).join('');
+  drawHomeMandates();
 }
 function bvDrawHead() {
   const L = bvList(), name = bvNameOf(BV.slot);
@@ -2114,6 +2240,101 @@ const DEMO_BV = (() => {
   };
 })();
 
+/* ================= HOME ================= */
+/* Everything here comes from data the page already loads: daily sends, replies, visits, the Leads rows, the deals and the buyer slots. */
+const HOME = { D: [] };
+const HOME_MSG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.5A8 8 0 1 1 21 12zM8.5 12h.01M12 12h.01M15.5 12h.01"/></svg>';
+const HV = { email: 'var(--g-ora)', social: 'var(--g-sil)', search: 'var(--g-teal)', other: 'linear-gradient(to top,#AEB3BC,#CDD1D8)' };
+function niceMax(v) { if (v <= 4) return 4; const p = Math.pow(10, Math.floor(Math.log10(v))), f = v / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p; }
+const homeUnlabeled = () => S.tableReplies.filter(r => !isBuyer(r) && isLead(r) && statusKey(r) === 'unlabeled').sort((a, b) => b.repliedAt.localeCompare(a.repliedAt));
+function homeDays() {
+  const rep = {}; S.chartReplies.filter(r => !r.ooo).forEach(r => { const k = bucketDay(r.repliedAt); rep[k] = (rep[k] || 0) + 1; });
+  const vb = S.visits ? visitsByDay() : null;
+  return S.daily.map(d => ({ date: d.date, em: d.emailSent, li: d.linkedinSent, sent: d.emailSent + d.linkedinSent, rep: rep[d.date] || 0, v: vb ? vb[d.date] : null }));
+}
+function drawHomeHead() {
+  const rs = bdRows(S.chartReplies), replied = rs.filter(r => !r.ooo), leads = rs.filter(isLead);
+  const became = leads.filter(r => groupOf(r) === 'converted').length, won = leads.filter(r => statusKey(r) === 'client').length;
+  const need = homeUnlabeled().length;
+  $('hDate').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+  $('hBig').textContent = need === 0 ? 'No one needs you today' : need === 1 ? '1 person needs you today' : `${need.toLocaleString()} people need you today`;
+  const step = (n, l, cls) => `<div class="${cls || ''}"><div class="n">${n.toLocaleString()}</div><div class="l">${l}</div></div>`;
+  $('hFunnel').innerHTML = step(replied.length, 'Replied') + step(leads.length, 'Leads generated') + step(became, 'Became prospects', became ? '' : 'hot') + step(won, 'Won', won ? '' : 'zero');
+}
+function drawHomeCharts() {
+  const D = HOME.D = homeDays(), n = D.length;
+  const labels = el => { const k = Math.min(n, 4), pts = Array.from({ length: k }, (_, j) => k === 1 ? 0 : Math.round(j * (n - 1) / (k - 1))); el.innerHTML = n ? pts.map(i => `<span>${fmtDay(D[i].date)}</span>`).join('') : ''; };
+  const axis = (yEl, plotEl, max, colsHtml) => {
+    const vals = [0, max / 2, max];
+    yEl.innerHTML = vals.map(v => `<span style="bottom:${v / max * 100}%">${Math.round(v)}</span>`).join('');
+    plotEl.innerHTML = vals.map(v => `<div class="hc-grid" style="bottom:${v / max * 100}%"></div>`).join('') + colsHtml;
+  };
+  const mx = niceMax(Math.max(1, ...D.map(x => x.sent))), rmx = Math.max(1, ...D.map(x => x.rep));
+  const tip = x => `${fmtDay(x.date)}: ${x.em.toLocaleString()} email · ${x.li.toLocaleString()} LinkedIn · ${x.rep} ${x.rep === 1 ? 'reply' : 'replies'}`;
+  axis($('hay'), $('haplot'), mx, `<div class="hc-cols">${D.map((x, i) => `<div class="hc-col" data-i="${i}" title="${esc(tip(x))}"><div class="hc-stk" style="height:${Math.max(1, x.sent / mx * 100)}%"><div style="height:${x.sent ? x.li / x.sent * 100 : 0}%;background:var(--g-sil)"></div><div style="flex:1;background:var(--g-ora)"></div></div></div>`).join('')}</div>`);
+  $('harep').innerHTML = D.map((x, i) => `<div class="hc-col" data-i="${i}" title="${esc(tip(x))}" style="justify-content:flex-start"><div class="hc-rb" style="height:${x.rep ? Math.max(5, x.rep / rmx * 100) : 0}%"></div></div>`).join('');
+  labels($('haxl'));
+  const off = S.visits === null;
+  ['hvch', 'hvx', 'hvleg'].forEach(id => { $(id).hidden = off; }); $('hvoff').hidden = !off;
+  if (!off) {
+    const vmx = niceMax(Math.max(1, ...D.map(x => x.v ? vTotal(x.v) : 0)));
+    axis($('hvy'), $('hvplot'), vmx, `<div class="hc-cols">${D.map((x, i) => { const v = x.v || { emailDirect: 0, social: 0, searchAi: 0, other: 0 }, t = vTotal(v) || 1;
+      return `<div class="hc-col" data-i="${i}" title="${esc(fmtDay(x.date) + ': ' + vTotal(v) + ' new visitors')}"><div class="hc-stk" style="height:${vTotal(v) / vmx * 100}%"><div style="height:${v.other / t * 100}%;background:${HV.other}"></div><div style="height:${v.searchAi / t * 100}%;background:${HV.search}"></div><div style="height:${v.social / t * 100}%;background:${HV.social}"></div><div style="flex:1;background:${HV.email}"></div></div></div>`; }).join('')}</div>`);
+    labels($('hvxl'));
+  }
+  hoverHome(-1);
+}
+/** Hover: dim the other days and swap the header text. Does not rebuild the bars. */
+function hoverHome(h) {
+  const D = HOME.D, on = h >= 0 && D[h];
+  document.querySelectorAll('#paneHome .hc-col').forEach(c => c.classList.toggle('dim', !!on && +c.dataset.i !== h));
+  const sent = D.reduce((a, x) => a + x.sent, 0), reps = D.reduce((a, x) => a + x.rep, 0);
+  $('actInfo').textContent = on ? `${fmtDay(D[h].date)}: ${D[h].em.toLocaleString()} email · ${D[h].li.toLocaleString()} LinkedIn · ${D[h].rep} ${D[h].rep === 1 ? 'reply' : 'replies'}`
+    : `${sent.toLocaleString()} sent · ${reps.toLocaleString()} ${reps === 1 ? 'reply' : 'replies'} · ${(sent ? reps / sent * 100 : 0).toFixed(1)}%`;
+  $('actInfo').style.color = on ? 'var(--text)' : '';
+  if (S.visits === null) return;
+  const tot = { emailDirect: 0, social: 0, searchAi: 0, other: 0 };
+  (on ? [D[h]] : D).forEach(x => { if (x.v) for (const k in tot) tot[k] += x.v[k]; });
+  $('hvleg').innerHTML = [['Email + direct', tot.emailDirect, HV.email], ['Social (incl. LinkedIn)', tot.social, HV.social], ['Search + AI', tot.searchAi, HV.search], ['Other', tot.other, HV.other]]
+    .map(([l, v, c]) => `<span><i class="sw" style="background:${c}"></i>${l} <b style="font-weight:500;color:var(--text)">${v.toLocaleString()}</b></span>`).join('');
+  $('hvnum').textContent = vTotal(tot).toLocaleString();
+  $('hvlbl').textContent = on ? fmtDay(D[h].date) : `${D.length} days`;
+}
+['haplot', 'harep', 'hvplot'].forEach(id => {
+  $(id).addEventListener('mouseover', e => { const c = e.target.closest('.hc-col'); if (c) hoverHome(+c.dataset.i); });
+  $(id).addEventListener('mouseleave', () => hoverHome(-1));
+});
+function drawHomeQueue() {
+  const list = homeUnlabeled();
+  $('hQueue').innerHTML = `<div class="hq-hd">${HOME_MSG}<span style="font-size:14px;font-weight:500">New replies to label</span><span class="qpill">${list.length.toLocaleString()}</span><div class="grow"></div><button class="btn ghost sm" data-go="outreach">Leads &rarr;</button></div>`
+    + (list.length ? list.slice(0, 3).map(r => `<div class="hq-it"><div style="flex:1;min-width:0"><div class="nm">${esc(r.name)}</div><div class="co">${esc(r.company)} · ${r.channel === 'linkedin' ? 'LinkedIn' : 'Email'}</div></div><span class="hot" style="font-size:12px;white-space:nowrap">Unlabeled</span></div>`).join('')
+      : '<div class="muted" style="padding:8px 0">Nothing waiting for a label.</div>');
+}
+function drawHomeMandates() {
+  if (!$('hMand')) return;
+  $('hMand').innerHTML = bvCodes().map((c, ci) => {
+    const sm = bvSlotSummary(c), L = BV.lists[c], name = bvNameOf(c), pct = sm && sm.total ? Math.round(sm.active / sm.total * 100) : 0;
+    const sum = !sm ? `<span>${({ error: 'Could not load', sfloading: 'Loading Salesforge...', sfoff: 'Salesforge not connected' })[L && L.state] || 'Loading...'}</span>`
+      : (sm.statuses.length ? sm.statuses.slice(0, 4).map(x => `<span>${x.n} ${esc(x.label)}</span>`).join('') : '<span>No buyers in these statuses</span>');
+    return `<button type="button" class="hmc" data-slot="${c}" aria-label="Open ${c} in Buyers"><div class="mid">
+      <div class="t"><i class="mdot" style="background:${BV_SLOT_DOT[ci % BV_SLOT_DOT.length]}"></i><span class="code">${c}</span><span class="nmm">${name ? esc(name) : '<span class="muted" style="font-weight:400">No mandate name yet</span>'}</span><div class="grow"></div><span class="muted">${sm ? sm.active + ' active of ' + sm.total : ''}</span></div>
+      <div class="sum">${sum}</div></div>
+      <div class="ring" style="background:conic-gradient(from -90deg,var(--orange) 0 ${pct}%,var(--line) ${pct}% 100%)"><div><b>${sm && sm.total ? pct + '%' : '–'}</b><small>active</small></div></div></button>`;
+  }).join('');
+}
+function drawHomePros() {
+  if (!S.stages.length && !S.deals.length) return;
+  const act = new Set(presetStages('active')), rows = proRowsFor(act);
+  $('hProN').textContent = `${S.deals.filter(d => ['open', 'parked'].includes(stageKind(d))).length} open`;
+  $('homeProBody').innerHTML = rows.length ? rows.map(proRow).join('') : '<tr><td colspan="7" class="empty">No active deals.</td></tr>';
+}
+function drawHome() { drawHomeHead(); drawHomeCharts(); drawHomeQueue(); drawHomeMandates(); drawHomePros(); }
+$('paneHome').addEventListener('click', e => {
+  const g = e.target.closest('[data-go]'); if (g) return showTab(g.dataset.go);
+  const m = e.target.closest('.hmc'); if (m) { BV.slot = m.dataset.slot; showTab('buyers'); }
+});
+$('hAddPro').addEventListener('click', apOpen);
+
 /* ================= LOADING ================= */
 async function loadChart() {
   const { from, to } = rangeFor($('range').value);
@@ -2135,7 +2356,7 @@ async function loadChart() {
 async function loadTable() {
   const { from, to } = rangeFor($('fTime').value);
   S.tableReplies = await API.replies(from, to);
-  fillSeqFilter(); drawLeads();
+  fillSeqFilter(); drawLeads(); drawHomeHead(); drawHomeQueue();
 }
 async function loadPipeline() {
   const [p, deals] = await Promise.all([API.pipeline(), API.prospects()]);
@@ -2188,7 +2409,7 @@ function start() {
   $('demoBanner').style.display = S.mode === 'demo' ? 'block' : 'none';
   $('bvDemo').style.display = S.mode === 'demo' ? 'block' : 'none';
   $('homeDemo').style.display = S.mode === 'demo' ? 'block' : 'none';
-  showTab(location.hash === '#spintax' ? 'spintax' : location.hash === '#buyers' ? 'buyers' : location.hash === '#home' ? 'home' : 'outreach');
+  showTab(location.hash === '#spintax' ? 'spintax' : location.hash === '#buyers' ? 'buyers' : location.hash === '#outreach' ? 'outreach' : 'home');
   refreshAll();
   if (CONFIG.autoRefreshMinutes > 0) S.timer = setInterval(refreshAll, CONFIG.autoRefreshMinutes * 60000);
 }
@@ -2200,6 +2421,7 @@ const TAB_TITLES = { home: 'Home', outreach: 'Outreach', buyers: 'Buyers', spint
 function showTab(name) {
   const hom = name === 'home', spx = name === 'spintax', byr = name === 'buyers', out = !hom && !spx && !byr;
   $('paneHome').classList.toggle('pane-off', !hom);
+  $('app').classList.toggle('flat', hom);
   $('pageTitle').textContent = TAB_TITLES[hom ? 'home' : spx ? 'spintax' : byr ? 'buyers' : 'outreach'];
   $('paneOutreach').classList.toggle('pane-off', !out);
   $('paneBuyers').classList.toggle('pane-off', !byr);
@@ -2213,8 +2435,9 @@ function showTab(name) {
     $('spxNote').hidden = S.mode !== 'demo';
     sendKeyToSpintax();
   }
-  if (byr) bvOpen();
-  try { history.replaceState(null, '', spx ? '#spintax' : byr ? '#buyers' : hom ? '#home' : location.pathname + location.search); } catch {}
+  if (byr || hom) bvOpen();
+  if (hom) drawHome();
+  try { history.replaceState(null, '', spx ? '#spintax' : byr ? '#buyers' : hom ? location.pathname + location.search : '#outreach'); } catch {}
 }
 /* The password goes only to our own iframe, only on our own origin, and only on request or on load. */
 function sendKeyToSpintax() {
