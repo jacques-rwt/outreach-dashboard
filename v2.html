@@ -165,6 +165,23 @@ td select{height:28px;font-size:12px}
 .saving{opacity:.5}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 16px;border-radius:var(--radius);font-size:13px;display:none;z-index:50;max-width:90vw}
 .toast.err{background:var(--danger)}
+.chat{display:inline-flex;align-items:center;justify-content:center;width:24px;height:18px;border:1px solid #1f4fb4;border-radius:4px;background:#fff;color:#1f4fb4;text-decoration:none;flex:none}
+.chat:hover{background:#eef3fd}
+.chat-off{display:inline-flex;align-items:center;justify-content:center;width:24px;height:18px;border:1px dashed #b9c0ca;border-radius:4px;background:#f6f7f9;color:#9aa3af;flex:none;cursor:default}
+.chat svg,.chat-off svg{width:13px;height:13px}
+.hsbox{display:inline-flex;align-items:center;gap:6px}
+.toast.utoast{display:none;align-items:center;gap:12px;line-height:1.4}
+.toast.utoast.on{display:flex}
+.toast.utoast.dark{background:#1b1b1a}
+.toast.utoast.ok{background:#14532d}
+.toast.utoast.amber{background:#6b3f04}
+.toast.utoast.bad{background:#7f1d1d}
+.toast.utoast a{font-weight:700;color:#9cc0ff}
+.toast.utoast.ok a{color:#b9f0c9}
+.toast.utoast .ut-n{font-size:11px;color:#b5b5b0;white-space:nowrap}
+.toast.utoast svg.tick{width:15px;height:15px;flex:none}
+.ul-text{font-size:13px;line-height:1.45;color:var(--text)}
+.ul-actions{display:flex;gap:8px;justify-content:flex-end}
 
 /* Add prospect */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.28);display:none;align-items:flex-start;justify-content:center;padding:10vh 16px 16px;z-index:40}
@@ -512,7 +529,16 @@ td select{height:28px;font-size:12px}
   </div>
 </div>
 
+<div class="modal-bg" id="ulBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ulTitle" style="max-width:440px">
+    <div class="modal-head"><h2 id="ulTitle">Set back to Unlabeled?</h2></div>
+    <div class="ul-text" id="ulText"></div>
+    <div class="ul-actions"><button class="btn" id="ulCancel">Cancel</button><button class="btn btn-pri" id="ulGo">Set back to Unlabeled</button></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
+<div class="toast utoast" id="uToast" role="status" aria-live="polite"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
@@ -520,6 +546,7 @@ td select{height:28px;font-size:12px}
 const CONFIG = {
   apiBase: 'https://outreach-sync-production.up.railway.app',
   hubspotPortalId: '21247897',
+  salesforgeWorkspaceSlug: 'rwt-capital-workspace',   /* Primebox link: https://app.salesforge.ai/<slug>/primebox/all/<threadId> */
   autoRefreshMinutes: 5,
   colors: {
     emailBar: 'rgba(255,255,255,0.55)', linkedinBar: 'rgba(255,255,255,0.22)',
@@ -606,6 +633,15 @@ const bdRows = rs => rs.filter(r => !isBuyer(r));
 const buyerSends = d => (d.buyerEmailSent || 0) + (d.buyerLinkedinSent || 0);
 const buyerLine = (sends, replies) => `of which buyer campaigns: ${sends.toLocaleString()} ${sends === 1 ? 'send' : 'sends'}, ${replies} ${replies === 1 ? 'reply' : 'replies'}`;
 const dotColor = r => r.channel === 'linkedin' ? CONFIG.colors.linkedinDot : CONFIG.colors.emailDot;
+/* Chat icon: opens the reply's conversation in Salesforge Primebox. No saved thread id: a grey dashed icon that is not a link. Out-of-office replies get none. */
+const CHAT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"></path></svg>';
+const primeboxUrl = threadId => `https://app.salesforge.ai/${CONFIG.salesforgeWorkspaceSlug}/primebox/all/${encodeURIComponent(threadId)}`;
+const NO_THREAD = 'No Salesforge conversation saved for this reply yet. Older replies fill in after the backfill.';
+function chatIcon(r) {
+  if (r.ooo) return '';
+  if (r.threadId) return `<a class="chat" target="_blank" rel="noopener" href="${esc(primeboxUrl(r.threadId))}" aria-label="Open conversation in Salesforge" title="Open conversation in Salesforge">${CHAT_SVG}</a>`;
+  return `<span class="chat-off" role="img" aria-label="${NO_THREAD}" title="${NO_THREAD}">${CHAT_SVG}</span>`;
+}
 function toast(msg, err) {
   const t = $('toast'); t.textContent = msg; t.className = 'toast' + (err ? ' err' : ''); t.style.display = 'block';
   clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500);
@@ -629,6 +665,8 @@ const API = {
   pipeline: () => S.mode === 'demo' ? DEMO.pipeline() : api('/dashboard/pipeline'),
   prospects: () => S.mode === 'demo' ? DEMO.prospects() : api('/dashboard/prospects?include=all').then(d => d.prospects || []),
   setStatus: (id, status, reconnectAt) => S.mode === 'demo' ? DEMO.setStatus(id, status, reconnectAt) : api(`/dashboard/contacts/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: JSON.stringify({ status, reconnectAt }) }),
+  /* POST /dashboard/contacts/:id/unlabel {expected:{status}} -> { status, body }: 200 { ok, status, previous, company: { status, blockLifted, stillBlockedReason }, tasks: { reconnectClosed, closedByLabel } }, 409 stale, 422 not_undoable | has_deal */
+  unlabel: (id, expected) => S.mode === 'demo' ? DEMO.unlabel(id, expected) : apiRaw(`/dashboard/contacts/${encodeURIComponent(id)}/unlabel`, { method: 'POST', body: JSON.stringify({ expected: { status: expected } }) }),
   leadFollowup: (id, dueAt) => S.mode === 'demo' ? DEMO.leadFollowup(id, dueAt) : api(`/dashboard/contacts/${encodeURIComponent(id)}/followups`, { method: 'POST', body: JSON.stringify({ dueAt }) }),
   setStage: (dealId, stageId, reconnectAt) => S.mode === 'demo' ? DEMO.setStage(dealId, stageId, reconnectAt) : api(`/dashboard/deals/${encodeURIComponent(dealId)}/stage`, { method: 'PATCH', body: JSON.stringify({ stageId, reconnectAt }) }),
   followup: (dealId, dueAt) => S.mode === 'demo' ? DEMO.followup(dealId, dueAt) : api(`/dashboard/deals/${encodeURIComponent(dealId)}/followups`, { method: 'POST', body: JSON.stringify({ dueAt }) }),
@@ -732,6 +770,8 @@ const DEMO = (() => {
     replies.push(demoRow(hid, name, company, seqs[k % seqs.length], buyerBack - 6, 'email', 'interested', true, null));          /* the BD reply, later */
     replies.push(demoRow(hid, name, company, bs, buyerBack, k % 2 ? 'linkedin' : 'email', 'interested', true, bs.slot));   /* the buyer reply came first */
   });
+  /* demo only: most replies have a saved conversation, some do not (so the grey icon shows) */
+  replies.forEach(r => { if (!r.ooo && Number(r.hubspotId) % 4 !== 0) r.threadId = 'mth_demo' + r.hubspotId + (r.buyerSlot || ''); });
   const find = id => replies.find(x => x.hubspotId === id);
   /* status is contact-level: both rows of a person carry the same status */
   function mirror(r) { replies.forEach(x => { if (x !== r && x.hubspotId === r.hubspotId) { x.status = r.status; x.wasLead = r.wasLead; } }); }
@@ -767,6 +807,21 @@ const DEMO = (() => {
         return { ok: true, status, dealId: d.dealId };
       }
       return { ok: true, status, nextTask: r.nextTask || null };
+    },
+    /* demo only: contacts whose id ends in 7 act as if another Interested contact keeps the block (amber); ending in 3 as if only the normal recency pause is left (plain success) */
+    unlabel: (hid, expected) => {
+      const r = find(hid);
+      if (!r) return { status: 404, body: { error: 'not_found', message: 'No HubSpot contact with that ID.' } };
+      if (!['interested', 'not_now', 'not_a_fit', 'not_interested', 'went_cold', 'wrong_contact'].includes(expected)) return { status: 422, body: { error: 'not_undoable', message: 'Only the six labels can be undone here.' } };
+      if (r.status !== expected) return { status: 409, body: { error: 'stale', current: r.status } };
+      if (deals.some(d => d.contact.hubspotId === hid)) return { status: 422, body: { error: 'has_deal', message: 'This contact has a deal in the BD pipeline, so the label cannot be undone here.' } };
+      const hadTask = expected === 'not_now' && !!r.nextTask;
+      r.status = 'replied_unclassified'; r.wasLead = true; if (hadTask) r.nextTask = null; mirror(r);
+      const tail = hid.slice(-1);
+      return { status: 200, body: { ok: true, contactId: hid, status: 'replied_unclassified', previous: expected,
+        company: { status: 'replied_status_unclear', blockLifted: tail !== '7' && ['interested', 'not_now', 'not_interested', 'not_a_fit', 'went_cold'].includes(expected),
+          stillBlockedReason: tail === '7' ? { interested: 'active_conversation', not_now: 'not_now', not_interested: 'not_interested', not_a_fit: 'not_a_fit', went_cold: 'not_now', wrong_contact: 'active_conversation' }[expected] : tail === '3' ? 'recently_contacted' : null },
+        tasks: { reconnectClosed: hadTask ? 1 : 0, closedByLabel: ['not_interested', 'not_a_fit', 'went_cold', 'wrong_contact'].includes(expected) && tail === '5' ? 2 : 0 } } };
     },
     leadFollowup: (hid, dueAt) => { const r = find(hid); r.nextTask = { id: 'lt' + Date.now(), dueAt: new Date(dueAt + 'T16:00:00').toISOString(), subject: 'Follow up' }; return r.nextTask; },
     setStage: (dealId, stageId, reconnectAt) => {
@@ -990,7 +1045,7 @@ function drawDay() {
     <div class="day-row">
       <span class="dot${isBuyer(r) ? ' hollow' : ''}" style="${isBuyer(r) ? 'border-color:' + dotColor(r) : 'background:' + (r.ooo ? '#bdbbb4' : dotColor(r))}"></span>
       <div style="min-width:0;flex:1"><div class="nm">${esc(r.name)}</div><div class="co">${esc(r.company)}</div></div>
-      ${isBuyer(r) ? `<span class="tag buyer">Buyer ${esc(r.buyerSlot)}</span>` : ''}<span class="tag">${labelOf(statusKey(r))}</span>
+      ${isBuyer(r) ? `<span class="tag buyer">Buyer ${esc(r.buyerSlot)}</span>` : ''}<span class="tag">${labelOf(statusKey(r))}</span>${chatIcon(r)}
     </div>`).join('') : '<div class="muted">No replies this day.</div>';
 }
 
@@ -1229,6 +1284,88 @@ function stageEntered(d) {
   return null;
 }
 function hasBdDeal(r) { return r.hasDeal === true || S.deals.some(d => d.contact && String(d.contact.hubspotId) === String(r.hubspotId)); }
+/* The six labels a person can set from the Leads table; only these can be set back to Unlabeled (the server enforces it). */
+const UNDOABLE = ['interested', 'not_now', 'not_a_fit', 'not_interested', 'went_cold', 'wrong_contact'];
+const CLOSING = ['not_a_fit', 'not_interested', 'went_cold', 'wrong_contact'];   /* these also close open [BD] tasks */
+const rowsOf = id => [...S.tableReplies, ...S.chartReplies].filter(r => r.hubspotId === id);
+const hsContactUrl = id => `https://app.hubspot.com/contacts/${CONFIG.hubspotPortalId}/record/0-1/${encodeURIComponent(id)}`;
+const TICK = '<svg class="tick" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>';
+/* One rich toast: kind dark | ok | amber | bad. parts: strings, or { b: 'bold text' }. */
+function uToast(kind, parts, { undo = null, link = null, ms = 6000 } = {}) {
+  const t = $('uToast'); clearInterval(t._i); clearTimeout(t._h); $('toast').style.display = 'none';
+  t.className = 'toast utoast on ' + kind; t.replaceChildren();
+  if (kind === 'ok') t.insertAdjacentHTML('beforeend', TICK);
+  const msg = document.createElement('span');
+  parts.forEach(p => { if (typeof p === 'string') msg.append(p); else { const b = document.createElement('strong'); b.textContent = p.b; msg.append(b); } });
+  t.append(msg);
+  if (link) { const a = document.createElement('a'); a.href = link.href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = link.text; t.append(a); }
+  const hide = () => { clearInterval(t._i); clearTimeout(t._h); t.className = 'toast utoast'; };
+  if (undo) {
+    const a = document.createElement('a'); a.href = '#'; a.textContent = 'Undo';
+    const n = document.createElement('span'); n.className = 'ut-n';
+    let left = Math.round(ms / 1000); n.textContent = left + ' s';
+    a.addEventListener('click', e => { e.preventDefault(); hide(); undo(); });
+    t._i = setInterval(() => { left--; if (left <= 0) hide(); else n.textContent = left + ' s'; }, 1000);
+    t.append(a, n);
+  }
+  t._h = setTimeout(hide, ms + 200);
+}
+const BLOCK_WHY = { active_conversation: 'another contact there is Interested', not_interested: 'another contact there is Not Interested', not_a_fit: 'another contact there is Not a Fit', not_now: 'another contact there is on Reconnect Later' };
+/* Set a labelled contact back to Unlabeled and say what happened. A normal recency pause (recently_contacted) is not worth a mention: that is success. */
+async function doUnlabel(id, expected) {
+  const rows = rowsOf(id), row = rows[0] || {}, name = row.name || 'This contact', company = row.company || 'The company';
+  const label = STATUS[expected] ? STATUS[expected].label : expected;
+  let res;
+  try { res = await API.unlabel(id, expected); }
+  catch (err) { uToast('bad', ['Not undone. ' + err.message]); drawLeads(); return; }
+  const { status, body } = res;
+  if (status === 200 && body && body.ok) {
+    const tasks = body.tasks || {}, co = body.company || {};
+    rows.forEach(r => { r.status = 'replied_unclassified'; r.wasLead = true; if (tasks.reconnectClosed > 0) r.nextTask = null; r._flag = ''; });
+    const parts = [name + ' is Unlabeled again.'];
+    let kind = 'ok', link = null;
+    if (tasks.reconnectClosed > 0) parts.push(' The [BD] Reconnect task it created was closed.');
+    else if (co.stillBlockedReason && BLOCK_WHY[co.stillBlockedReason]) { kind = 'amber'; parts.push(` ${company} stays blocked: ${BLOCK_WHY[co.stillBlockedReason]}.`); }
+    else if (co.blockLifted) parts.push(` ${company}'s block was lifted.`);
+    if (tasks.closedByLabel > 0) {
+      parts.push(` ${tasks.closedByLabel} [BD] ${tasks.closedByLabel === 1 ? 'task' : 'tasks'} closed by ${label} ${tasks.closedByLabel === 1 ? 'stays' : 'stay'} closed.`);
+      link = { href: hsContactUrl(id), text: 'Open in HubSpot' };
+    }
+    uToast(kind, parts, { link, ms: 8000 });
+  } else if (status === 409) {
+    uToast('bad', ['Not undone. ' + name + ' was changed in HubSpot after this page loaded. The row was reloaded.'], { ms: 8000 });
+    try { await loadTable(); S.tableReplies.filter(r => r.hubspotId === id).forEach(r => { r._flag = 'Changed in HubSpot since this page loaded. Row reloaded. Your change was not saved.'; }); } catch (e) { /* the next refresh shows it */ }
+  } else {
+    uToast('bad', ['Not undone. ' + ((body && body.message) || (status === 404 ? 'No HubSpot contact with that ID.' : 'Server error ' + status))], { ms: 8000 });
+  }
+  drawFunnel(); drawDay(); drawLeads();
+}
+/* The confirm shown when "Unlabeled (undo label)" is picked from the dropdown. */
+const UL = { id: null, expected: null };
+function ulOpen(id) {
+  const r = rowsOf(id)[0]; if (!r) return drawLeads();
+  const k = statusKey(r), company = r.company || 'this company';
+  UL.id = id; UL.expected = r.status;
+  $('ulTitle').textContent = 'Set ' + r.name + ' back to Unlabeled?';
+  const lines = [];
+  if (k === 'interested') lines.push('Interested also blocked ' + company + ' from outreach. That block will be lifted.');
+  else if (k === 'not_interested' || k === 'not_a_fit') lines.push('This label blocked ' + company + ' for a year. That block will be lifted.');
+  else if (k === 'not_now' || k === 'went_cold') lines.push('This label paused ' + company + '. That pause will be lifted.');
+  if (CLOSING.includes(k)) lines.push('Tasks it closed stay closed.');
+  $('ulText').textContent = lines.join(' ');
+  $('ulGo').disabled = false;
+  $('ulBg').classList.add('on'); $('ulGo').focus();
+}
+function ulClose(redraw) { $('ulBg').classList.remove('on'); UL.id = null; if (redraw) drawLeads(); }
+$('ulCancel').addEventListener('click', () => ulClose(true));
+$('ulBg').addEventListener('click', e => { if (e.target === $('ulBg')) ulClose(true); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('ulBg').classList.contains('on')) ulClose(true); });
+$('ulGo').addEventListener('click', async () => {
+  const id = UL.id, expected = UL.expected; if (!id) return;
+  $('ulGo').disabled = true; ulClose(false);
+  await doUnlabel(id, expected);
+});
+
 function statusCell(r) {
   const k = statusKey(r), st = STATUS[k];
   if (st.group === 'converted') return `<span class="pill ${st.pill}">${st.label}${k === 'prospect' ? (hasBdDeal(r) ? ' (in pipeline)' : ' (no deal yet)') : ''}</span>`;
@@ -1238,7 +1375,9 @@ function statusCell(r) {
   const opts = (S.contactOpts || []).filter(o => o.selectable && o.value !== 'prospect');
   const head = opts.some(o => o.value === k) ? '' : `<option value="" selected disabled>${st.label}</option>`;
   const off = S.contactOpts ? '' : ' disabled title="Status options could not be loaded from HubSpot. Press Refresh."';
-  return `<select data-id="${esc(r.hubspotId)}" aria-label="Status for ${esc(r.name)}"${off}>${head}${opts.map(o => `<option value="${esc(o.value)}"${o.value === k ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}<optgroup label="Pipeline"><option value="prospect">Make prospect ›</option></optgroup></select>`;
+  /* One of the six labels and no BD deal: the first option undoes the label (the server refuses anything else). */
+  const undo = UNDOABLE.includes(k) && !hasBdDeal(r) ? '<option value="__unlabel">Unlabeled (undo label)</option><option disabled>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500</option>' : '';
+  return `<select data-id="${esc(r.hubspotId)}" aria-label="Status for ${esc(r.name)}"${off}>${undo}${head}${opts.map(o => `<option value="${esc(o.value)}"${o.value === k ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}<optgroup label="Pipeline"><option value="prospect">Make prospect ›</option></optgroup></select>`;
 }
 function drawLeads() {
   if (!S.leadSel) S.leadSel = new Set(presetStatuses('all'));
@@ -1252,19 +1391,20 @@ function drawLeads() {
     const days = daysSince(r.repliedAt), g = groupOf(r), cls = days <= 7 ? 'g' : days <= 21 ? 'a' : 'r';
     return `<tr class="${g === 'out' ? 'dim' : ''}">
       <td>${fmtIso(r.repliedAt)}</td>
-      <td><div class="who"><span class="av">${esc(initials(r.name))}</span><div style="min-width:0"><div>${esc(r.name)}</div><div class="sub">${esc(r.company)}</div></div></div></td>
+      <td><div class="who"><span class="av">${esc(initials(r.name))}</span><div style="min-width:0"><div>${esc(r.name)}</div><div class="sub">${esc(r.company)}</div>${r._flag ? `<div class="bv-flag">${esc(r._flag)}</div>` : ''}</div></div></td>
       <td title="${esc(r.sequenceName)}">${esc(r.sequenceName)}</td>
       <td><span style="display:inline-flex;align-items:center;gap:6px"><span class="dot" style="background:${dotColor(r)}"></span>${r.channel === 'linkedin' ? 'LinkedIn' : 'Email'}</span></td>
       <td>${g === 'open' ? `<span class="days ${cls}">${days}d</span>` : ''}</td>
       <td>${statusCell(r)}</td>
       <td>${leadFollowCell(r)}</td>
-      <td>${r.hubspotId ? `<a class="hs" target="_blank" rel="noopener" href="https://app.hubspot.com/contacts/${CONFIG.hubspotPortalId}/record/0-1/${encodeURIComponent(r.hubspotId)}" title="Open contact in HubSpot">HS</a>` : ''}</td>
+      <td><span class="hsbox">${chatIcon(r)}${r.hubspotId ? `<a class="hs" target="_blank" rel="noopener" href="https://app.hubspot.com/contacts/${CONFIG.hubspotPortalId}/record/0-1/${encodeURIComponent(r.hubspotId)}" title="Open contact in HubSpot">HS</a>` : ''}</span></td>
     </tr>`;
   }).join('') : '<tr><td colspan="8" class="empty">No leads match these filters.</td></tr>';
 }
 $('leadBody').addEventListener('change', async e => {
   const sel = e.target; if (sel.tagName !== 'SELECT') return;
   const id = sel.dataset.id, next = sel.value;
+  if (next === '__unlabel') { ulOpen(id); return; }
   if (next === 'not_now') { S.pendingReconnect = id; drawLeads(); return; }
   await saveLeadStatus(id, next, null, sel);
 });
@@ -1284,7 +1424,8 @@ async function saveLeadStatus(id, next, reconnectAt, sel) {
     const res = await API.setStatus(id, next, reconnectAt);
     [...S.tableReplies, ...S.chartReplies].filter(r => r.hubspotId === id).forEach(r => { r.status = next; if (STATUS[next] && STATUS[next].group !== 'out') r.wasLead = true; if (res && 'nextTask' in res) r.nextTask = res.nextTask; });
     S.pendingReconnect = null;
-    toast(next === 'prospect' ? 'Deal created in the BD pipeline' : 'Saved to HubSpot: ' + (STATUS[next] ? STATUS[next].label : next));
+    if (UNDOABLE.includes(next)) { const who = rowsOf(id)[0]; uToast('dark', [who ? who.name : 'Contact', ' marked ', { b: STATUS[next].label }], { undo: () => doUnlabel(id, next), ms: 10000 }); }
+    else toast(next === 'prospect' ? 'Deal created in the BD pipeline' : 'Saved to HubSpot: ' + (STATUS[next] ? STATUS[next].label : next));
     if (res && res.dealId) { S.proSel = new Set(presetStages('active')); await refreshProspectsUntil(res.dealId); }
   } catch (err) { toast('Could not save. ' + err.message, true); }
   drawFunnel(); drawDay(); drawLeads();
