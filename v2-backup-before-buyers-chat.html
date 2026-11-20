@@ -1,0 +1,2255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RWT Outreach</title>
+<!--
+RWT OUTREACH DASHBOARD (Salesforge + HubSpot), file version v14 (Buyers tab)
+
+How it works
+  - The page holds no API keys. Every request goes to the outreach-sync server on Railway,
+    which checks the dashboard password (x-dashboard-key header) and holds the Salesforge
+    and HubSpot keys. HubSpot is the only place anything is stored.
+  - "Preview with demo data" runs the whole page on made-up numbers, no server needed.
+
+Server routes this page expects (see DASHBOARD_API_BRIEF_v5.md)
+  GET   /dashboard/ping
+  GET   /dashboard/daily?from&to
+  GET   /dashboard/replies?from&to&split=1      rows include wasLead and buyerSlot (S1, S2, S3 or null = BD)
+  PATCH /dashboard/contacts/:hubspotId/status   {"status": "interested" | ... | "prospect", "reconnectAt": "YYYY-MM-DD" (with not_now)}
+  POST  /dashboard/contacts/:hubspotId/followups {"dueAt": "YYYY-MM-DD"}
+  GET   /dashboard/pipeline
+  GET   /dashboard/prospects?include=all
+  PATCH /dashboard/deals/:dealId/stage          {"stageId": "...", "reconnectAt": "YYYY-MM-DD"}
+  POST  /dashboard/deals/:dealId/followups      {"dueAt": "YYYY-MM-DD", "note": "..."}
+  GET   /dashboard/contacts/search?q=...        existing HubSpot contacts, max 10, with flags (Add prospect)
+  POST  /dashboard/prospects                    {"contactId": "...", "source": "...", "confirm": true} (Add prospect)
+  GET   /dashboard/options                      dropdown options read from HubSpot (contact statuses with selectable flag, slot statuses, furthest stages) + writeEnabled
+  GET   /dashboard/buyers?slot=S1|S2|S3         the companies with someone enrolled in that slot's Salesforge sequences (503 salesforge_loading: retry; 503 salesforge_not_configured: show the message)
+  PATCH /dashboard/buyers/:companyId            {"slot", "changes": {status|furthest|notes}, "expected": {same keys}}  (409 = changed in HubSpot since load)
+  POST  /dashboard/buyers/:companyId/notes      {"slot", "text", "expected": {"notes"}}  (HubSpot timeline note + dated entry on top of the notes field; 409 stale, 422 notes_field_full, 502 note_failed, 200 partial)
+  POST  /dashboard/buyers/bulk                 {"slot", "status", "items": [{companyId, expected}]}
+  GET   /dashboard/companies/search?q=...       existing HubSpot companies, max 10 (Add buyer to slot)
+  POST  /dashboard/buyers                       {"slot", "companyId", "status"} (Add buyer to slot: the page does not use it for now)
+  GET   /dashboard/mandates                     saved display names of S1, S2, S3
+  PATCH /dashboard/mandates/:slot               {"name": "..."}
+
+Buyers tab
+  Slot cards (S1, S2, S3) act as tabs. Every dropdown option and label comes from GET /dashboard/options; the page only keeps the fixed display order of the chips and summaries.
+  The table shows active statuses by default (chips, filtered in the page from the rows already loaded). Colours for this tab are variables on .buyers-tab.
+  Edits, bulk status and Add buyer to slot write to HubSpot through the server and are off unless the server says writeEnabled (BUYERS_WRITE_ENABLED).
+  Renaming a mandate only changes its display name; sequences are still matched to a slot by the S1, S2 or S3 prefix.
+
+Spintax tab
+  The tab loads spintax.html in an iframe (its own page, so its styles and scripts cannot clash with this one).
+  This page hands the dashboard password to the iframe by postMessage (same origin only). The spintax page then calls
+  POST /dashboard/spintax/claude {"kind": "spin" | "suggest" | "review", "payload": {...}} itself. No Claude key is in either page.
+-->
+<style>
+:root{
+  --bg:#f4f4f2; --surface:#ffffff; --surface-2:#f8f8f6; --border:rgba(0,0,0,0.08); --border-md:rgba(0,0,0,0.15);
+  --text:#1b1b1a; --text-2:#55534e; --text-3:#8a8882; --navy:#1f2a44;
+  --danger:#c0392b; --radius:8px; --radius-lg:12px;
+  --font:Calibri,'Segoe UI',system-ui,-apple-system,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);font-size:14px;background:var(--bg);color:var(--text);min-height:100vh}
+button,select,input{font-family:inherit;font-size:13px}
+select,input{height:32px;padding:0 8px;border:1px solid var(--border-md);border-radius:var(--radius);background:var(--surface);color:var(--text)}
+button{cursor:pointer}
+.btn{height:32px;padding:0 12px;border:1px solid var(--border-md);border-radius:var(--radius);background:var(--surface);color:var(--text-2)}
+.btn:hover{background:var(--surface-2)}
+.btn-sm{height:26px;padding:0 9px;font-size:12px}
+.btn-primary{background:var(--navy);color:#fff;border-color:var(--navy);width:100%;height:38px}
+.btn-primary:hover{opacity:.92;background:var(--navy)}
+
+.gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+.gate-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:36px;width:100%;max-width:360px;text-align:center}
+.gate-card h1{font-size:20px;color:var(--navy);margin-bottom:4px}
+.gate-card p{font-size:13px;color:var(--text-2);margin-bottom:22px}
+.gate-card input{width:100%;height:38px;margin-bottom:10px}
+.gate-err{color:var(--danger);font-size:12px;min-height:18px;margin-top:8px}
+.link-btn{background:none;border:none;color:var(--text-2);font-size:12px;margin-top:10px;text-decoration:underline}
+
+#app{display:none}
+.tabs{max-width:1280px;margin:0 auto;padding:0 24px;display:flex;gap:4px}
+.tab{height:34px;padding:0 14px;border:1px solid transparent;border-bottom:2px solid transparent;background:none;color:var(--text-2);font-size:13px;border-radius:var(--radius) var(--radius) 0 0}
+.tab:hover{background:var(--surface-2)}
+.tab.active{color:var(--navy);font-weight:600;border-bottom-color:#FF6633}
+.pane-off{display:none!important}
+#app.on-spintax #range,#app.on-spintax #refreshBtn,#app.on-spintax #updated{display:none}
+#paneSpintax iframe{display:block;width:100%;height:calc(100vh - 100px);min-height:520px;border:0;background:#e9ebee}
+.spx-note{max-width:1280px;margin:0 auto;padding:8px 24px;font-size:13px;color:#7a4b00;background:#fff6e5;border-bottom:1px solid #f3d9a4}
+header{background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+.hdr{max-width:1280px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.hdr h1{font-size:17px;color:var(--navy);margin-right:auto}
+.muted{color:var(--text-3);font-size:12px}
+main{max-width:1280px;margin:0 auto;padding:20px 24px 40px;display:flex;flex-direction:column;gap:16px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px 20px}
+.demo-banner{background:#fff6e5;color:#7a4b00;border:1px solid #f3d9a4;border-radius:var(--radius);padding:8px 12px;font-size:13px;display:none}
+
+/* Funnel + tally */
+.funnel{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
+.fstep{display:flex;flex-direction:column;gap:2px;min-width:110px}
+.fstep .n{font-size:32px;font-weight:600;color:var(--navy);line-height:1}
+.fstep .l{font-size:13px;color:var(--text-2)}
+.farrow{color:var(--text-3);font-size:22px;line-height:1}
+.tally{display:flex;flex-wrap:wrap;gap:6px 22px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+.tl{font-size:13px;color:var(--text-2)}
+.tl b{color:var(--text);margin-left:5px}
+
+/* Chart + day panel */
+.split{display:grid;grid-template-columns:minmax(0,2.1fr) minmax(0,1fr);gap:18px}
+.lg{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--text-2);margin-bottom:8px}
+.lg span{display:flex;align-items:center;gap:6px}
+.sq{width:11px;height:11px;border-radius:2px;display:inline-block}
+.dot{width:11px;height:11px;border-radius:50%;display:inline-block;flex:none;box-shadow:0 0 0 1.5px #fff,0 0 0 2px rgba(0,0,0,0.08)}
+.chart-wrap{background:linear-gradient(180deg,#0f2757 0%,#0a1b40 100%);border-radius:var(--radius);padding:14px 14px 8px}
+.chart-wrap .lg{color:rgba(255,255,255,0.78)}
+.chart-box{position:relative;height:330px;cursor:pointer}
+.visits{margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.10)}
+.visits .vh{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;color:rgba(255,255,255,0.86);font-size:12px;margin:0 4px 4px}
+.visits .vh b{font-size:13px;color:#fff;font-weight:600}
+.visits .vh .vt{color:rgba(255,255,255,0.6)}
+.visits .lg{margin:0 0 2px}
+.visits-box{position:relative;height:120px;cursor:pointer}
+.visits-off{color:rgba(255,255,255,0.55);font-size:12px;padding:6px 4px}
+.day{background:var(--surface-2);border-radius:var(--radius);padding:14px;min-width:0;display:flex;flex-direction:column;max-height:560px}
+.day h3{font-size:16px;color:var(--navy)}
+.day-list{display:flex;flex-direction:column;gap:10px;overflow-y:auto;margin-top:12px}
+.day-row{display:flex;align-items:center;gap:10px;min-width:0}
+.day-row .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.day-row .co{font-size:12px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--surface);border:1px solid var(--border);color:var(--text-2);white-space:nowrap}
+
+/* Tables */
+.tbl-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.tbl-head h2{font-size:16px;color:var(--navy);margin-right:auto}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.chip{height:28px;padding:0 11px;border:1px solid var(--border-md);border-radius:14px;background:var(--surface);color:var(--text-2);font-size:12px}
+.chip.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:900px}
+th{font-weight:600;color:var(--text-2);text-align:left;padding:8px;border-bottom:1px solid var(--border);font-size:12px;white-space:nowrap}
+td{padding:8px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr.dim td{color:var(--text-3)}
+td select{height:28px;font-size:12px}
+.av{display:inline-flex;width:28px;height:20px;border-radius:4px;background:#F5C4B3;color:#712B13;font-size:10px;font-weight:700;align-items:center;justify-content:center;margin-right:8px;flex:none}
+.who{display:flex;align-items:center;min-width:0}
+.who .sub{font-size:11px;color:var(--text-3)}
+.pill{display:inline-block;font-size:11px;padding:2px 9px;border-radius:10px;white-space:nowrap}
+.p-open{background:#EAF3DE;color:#27500A}.p-later{background:#FAEEDA;color:#633806}.p-un{background:#F1EFE8;color:#444441}
+.p-pros{background:#E6F1FB;color:#0C447C}.p-won{background:#EEEDFE;color:#3C3489}.p-lost{background:#FCEBEB;color:#791F1F}
+.p-src{background:#F1EFE8;color:#444441}
+.days{font-weight:600}.g{color:#3B6D11}.a{color:#854F0B}.r{color:#A32D2D}
+.stale{font-size:10px;padding:1px 6px;border:1px solid #EF9F27;color:#854F0B;border-radius:8px;margin-left:5px;font-weight:600}
+.journey{display:flex;align-items:center;gap:3px}
+.ji{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;border:1.5px solid #B4B2A9;color:#888780;background:#fff;flex:none}
+.ji svg{width:12px;height:12px}
+.ji.hit{border-color:transparent;color:#fff}
+.ji.more{font-size:10px;width:auto;padding:0 5px;border-radius:10px}
+.jsep{width:6px;height:1.5px;background:#D3D1C7;flex:none}
+.fu{display:flex;align-items:center;gap:6px}
+.presets{display:inline-flex;align-items:center;gap:2px;font-size:12px;color:var(--text-3)}
+.preset{background:none;border:none;color:var(--text-2);font-size:12px;text-decoration:underline;padding:0 5px;height:28px}
+.preset:hover{color:var(--navy)}
+.chipsep{width:1px;height:20px;background:var(--border-md);margin:0 6px;align-self:center}
+.chip .c{opacity:.65;margin-left:5px}
+.noplan{font-size:10px;padding:1px 6px;border:1px solid #EF9F27;color:#854F0B;border-radius:8px;font-weight:600}
+.fu input[type=date]{height:26px;font-size:12px;padding:0 4px}
+.over{color:#A32D2D;font-weight:600}
+.hs{display:inline-flex;align-items:center;justify-content:center;background:#ff7a59;color:#fff;font-size:10px;font-weight:700;padding:3px 6px;border-radius:4px;text-decoration:none}
+.empty{text-align:center;color:var(--text-3);padding:24px}
+.saving{opacity:.5}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 16px;border-radius:var(--radius);font-size:13px;display:none;z-index:50;max-width:90vw}
+.toast.err{background:var(--danger)}
+.chat{display:inline-flex;align-items:center;justify-content:center;width:24px;height:18px;border:1px solid #1f4fb4;border-radius:4px;background:#fff;color:#1f4fb4;text-decoration:none;flex:none}
+.chat:hover{background:#eef3fd}
+.chat-off{display:inline-flex;align-items:center;justify-content:center;width:24px;height:18px;border:1px dashed #b9c0ca;border-radius:4px;background:#f6f7f9;color:#9aa3af;flex:none;cursor:default}
+.chat svg,.chat-off svg{width:13px;height:13px}
+.hsbox{display:inline-flex;align-items:center;gap:6px}
+.toast.utoast{display:none;align-items:center;gap:12px;line-height:1.4}
+.toast.utoast.on{display:flex}
+.toast.utoast.dark{background:#1b1b1a}
+.toast.utoast.ok{background:#14532d}
+.toast.utoast.amber{background:#6b3f04}
+.toast.utoast.bad{background:#7f1d1d}
+.toast.utoast a{font-weight:700;color:#9cc0ff}
+.toast.utoast.ok a{color:#b9f0c9}
+.toast.utoast .ut-n{font-size:11px;color:#b5b5b0;white-space:nowrap}
+.toast.utoast svg.tick{width:15px;height:15px;flex:none}
+.ul-text{font-size:13px;line-height:1.45;color:var(--text)}
+.ul-actions{display:flex;gap:8px;justify-content:flex-end}
+
+/* Add prospect */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.28);display:none;align-items:flex-start;justify-content:center;padding:10vh 16px 16px;z-index:40}
+.modal-bg.on{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px 20px;width:100%;max-width:540px;max-height:80vh;display:flex;flex-direction:column;gap:10px}
+.modal-head{display:flex;align-items:center;gap:8px}
+.modal-head h2{font-size:16px;color:var(--navy);margin-right:auto}
+.modal input[type=search]{width:100%;height:36px}
+.ap-list{display:flex;flex-direction:column;overflow-y:auto;min-height:0;border-top:1px solid var(--border)}
+.ap-row{display:flex;align-items:center;gap:10px;padding:9px 6px;border:none;border-bottom:1px solid var(--border);background:none;text-align:left;width:100%;color:var(--text);min-width:0}
+.ap-row:hover,.ap-row.on{background:var(--surface-2)}
+.ap-row .who{flex:1}
+.ap-row .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ap-row .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ap-tags{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;flex:none;max-width:45%}
+.tag.warn{border-color:#EF9F27;color:#854F0B}
+.tag.block{border-color:#E9A6A6;color:#791F1F;background:#FCEBEB}
+.tag.buyer{border-color:#9aa9c9;color:#3b4a6b}
+.dot.hollow{background:transparent;box-shadow:none;border:2px solid;box-sizing:border-box}
+.chart-sum{font-size:12px;color:rgba(255,255,255,0.86);margin:0 4px 8px}
+.fnote{margin-top:8px}
+.ap-pick{background:var(--surface-2);border-radius:var(--radius);padding:12px;display:flex;flex-direction:column;gap:8px;font-size:13px}
+.ap-pick .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ap-msg{font-size:13px;color:var(--text-2)}
+.ap-msg.err{color:var(--danger)}
+.ap-warn{background:#fff6e5;color:#7a4b00;border:1px solid #f3d9a4;border-radius:var(--radius);padding:8px 10px;font-size:13px}
+.btn-go{background:var(--navy);color:#fff;border-color:var(--navy)}
+.btn-go:hover{opacity:.92;background:var(--navy)}
+.btn:disabled{opacity:.5;cursor:default}
+
+/* Buyers tab. Layout first, then the blue styling, which is scoped to .buyers-tab so no other tab changes colour. */
+#app.on-buyers #range{display:none}
+.bv-note{background:#fff6e5;color:#7a4b00;border:1px solid #f3d9a4;border-radius:var(--radius);padding:8px 12px;font-size:13px}
+.bv-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.bv-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.bv-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.bv-code{font-weight:600;font-size:13px}
+.bv-icon{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;background:none;border:none;color:var(--text-2);border-radius:var(--radius);flex:none}
+.bv-icon:hover{background:var(--surface-2)}
+.bv-pick{text-align:left;background:none;border:none;padding:0;color:inherit;display:flex;flex-direction:column;gap:4px;min-height:32px;width:100%;font-size:13px}
+.bv-pick b{font-size:15px;font-weight:600;overflow-wrap:anywhere}
+.bv-pick .muted{overflow-wrap:anywhere}
+.bv-sum{font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.bv-count{background:none;border:none;padding:0;font:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.bv-edit{display:flex;flex-direction:column;gap:8px}
+.bv-edit input{width:100%;height:36px}
+.bv-edit .row{display:flex;gap:8px;flex-wrap:wrap}
+.bv-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px}
+.bv-bar[hidden]{display:none}
+.bv-tbl td{white-space:normal;max-width:none;vertical-align:top;overflow:visible}
+.bv-tbl select{width:100%;min-width:140px;height:32px;font-size:13px}
+.bv-tbl textarea{width:100%;min-width:160px;height:32px;min-height:32px;padding:6px 8px;border:1px solid var(--border-md);border-radius:var(--radius);background:var(--surface);color:var(--text);font:inherit;font-size:13px;resize:vertical}
+.bv-tbl input[type=checkbox]{width:16px;height:16px;padding:0;margin-top:8px}
+.bv-tbl .nm{overflow-wrap:anywhere}
+.bv-flag{font-size:11px;color:#854F0B;margin-top:2px}
+.bv-ch{display:inline-flex;align-items:center;gap:5px;vertical-align:middle}
+.bv-ic{width:14px;height:14px;flex:none}
+.bv-lt{white-space:nowrap}
+.bv-subline{display:flex;flex-wrap:wrap;gap:2px 16px;margin:-6px 0 10px}
+.bv-subline .muted{font-size:11px}
+.bv-msg{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.bv-msg[hidden]{display:none}
+.bv-sum.bv-fu{font-size:11px}
+.bv-load{display:flex;align-items:center;justify-content:center;gap:10px;padding:28px;color:var(--text-2)}
+.bv-spin{width:16px;height:16px;border:2px solid var(--border-md);border-top-color:var(--navy);border-radius:50%;animation:bvspin .8s linear infinite}
+@keyframes bvspin{to{transform:rotate(360deg)}}
+.ap-pick select{min-width:160px}
+
+/* Blue styling for the Buyers tab only. The colours are variables on the wrapper; nothing outside .buyers-tab uses them. */
+.buyers-tab{--bt-text:#1B2433;--bt-text2:#4A5568;--bt-head:#F7F8FB;--bt-line:#EEF1F6;--bt-border:#DDE2EA;--bt-blue:#1F4FB4;
+  --bt-bulk-bg:#E8EEFB;--bt-bulk-text:#17408F;--bt-bulk-border:#9FB4E0;--bt-sel:#F2F6FE;--bt-pop:#12203A;color:var(--bt-text)}
+.buyers-tab .muted,.buyers-tab .bv-code,.buyers-tab .bv-icon{color:var(--bt-text2)}
+.buyers-tab .tbl-head h2,.buyers-tab .bv-pick b{color:var(--bt-text)}
+.buyers-tab .panel,.buyers-tab .bv-card{border-color:var(--bt-border)}
+.buyers-tab input,.buyers-tab select,.buyers-tab textarea{border-color:var(--bt-border)}
+.buyers-tab th{background:var(--bt-head);color:var(--bt-text2);border-bottom-color:var(--bt-line)}
+.buyers-tab td{border-bottom-color:var(--bt-line)}
+.buyers-tab .bv-card.on{border-color:var(--bt-blue);box-shadow:0 0 0 1px var(--bt-blue)}
+.buyers-tab .bv-card.on .bv-code{color:var(--bt-blue)}
+.buyers-tab .chip{background:#fff;border-color:var(--bt-border);color:var(--bt-text2)}
+.buyers-tab .chip.on{background:var(--bt-blue);border-color:var(--bt-blue);color:#fff}
+.buyers-tab .btn-go{background:var(--bt-blue);border-color:var(--bt-blue);color:#fff}
+.buyers-tab .btn-go:hover{background:var(--bt-blue);opacity:.92}
+.buyers-tab .bv-edit input{border:2px solid var(--bt-blue)}
+.buyers-tab .bv-count{color:var(--bt-blue)}
+.buyers-tab .bv-bar{background:var(--bt-bulk-bg);color:var(--bt-bulk-text)}
+.buyers-tab .bv-bar .muted{color:var(--bt-bulk-text)}
+.buyers-tab .bv-bar select{border-color:var(--bt-bulk-border)}
+.buyers-tab .bv-tbl tr.sel td{background:var(--bt-sel)}
+/* Status colours (Buyers tab only). Tone comes from BV_STATUS_TONE in the script; the select stays native. */
+.buyers-tab .bv-tbl select option{background:#fff;color:var(--bt-text);font-weight:400}
+.buyers-tab .bv-tbl select[data-tone=green]{background:#e2f3e7;border-color:#93cfa6;color:#14532d;font-weight:600}
+.buyers-tab .bv-tbl select[data-tone=grey]{background:#eef0f3;border-color:#cbd2dc;color:#374151}
+.buyers-tab .bv-tbl select[data-tone=amber]{background:#fdf0d8;border-color:#e8b866;color:#6b3f04;font-weight:600}
+.buyers-tab .bv-tbl select[data-tone=red]{background:#fbe3e3;border-color:#e39a9a;color:#7f1d1d;font-weight:600}
+.buyers-tab .bv-tbl select[data-tone=dark]{background:#33383f;border-color:#33383f;color:#fff;font-weight:600}
+.buyers-tab .bv-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;flex:none}
+.buyers-tab .bv-dot[data-tone=green]{background:#1e8e4e}
+.buyers-tab .bv-dot[data-tone=grey]{background:#8a94a3}
+.buyers-tab .bv-dot[data-tone=amber]{background:#d98a0b}
+.buyers-tab .bv-dot[data-tone=red]{background:#c0392b}
+.buyers-tab .bv-dot[data-tone=dark]{background:#33383f}
+.buyers-tab .chip.on .bv-dot{box-shadow:0 0 0 2px #fff}
+/* Notes cell: latest entry, Show all, and a one-line Add. */
+.buyers-tab .bv-ncell{display:flex;flex-direction:column;gap:6px;min-width:200px}
+.buyers-tab .bv-nbox{background:#f6f7f9;border:1px solid #e6e8ec;border-radius:8px;padding:6px 9px;font-size:13px;transition:background .6s}
+.buyers-tab .bv-nbox.hl{background:#eaf1ff}
+.buyers-tab .bv-nlatest{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere}
+.buyers-tab .bv-nfull{max-height:92px;overflow-y:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.buyers-tab .bv-nlink{background:none;border:none;padding:0;margin-top:3px;font-size:12px;color:var(--bt-blue);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.buyers-tab .bv-nadd{display:flex;gap:6px}
+.buyers-tab .bv-ninput{flex:1;min-width:0;height:30px;padding:0 8px;border:1px solid var(--bt-border);border-radius:var(--radius);background:#fff;color:var(--bt-text);font:inherit;font-size:13px}
+.buyers-tab .bv-nbtn{height:30px;padding:0 12px;border:1px solid var(--bt-blue);border-radius:var(--radius);background:#fff;color:var(--bt-blue);font-size:13px;font-weight:600;cursor:pointer}
+.buyers-tab .bv-nbtn:disabled{background:#eef0f3;border-color:#cbd2dc;color:#8a94a3;cursor:default}
+.toast.bv-ok{background:#14532d}
+.toast.bv-bad{background:#7f1d1d}
+.toast .bv-tick{width:15px;height:15px;vertical-align:-3px;margin-right:7px}
+
+@media (max-width:900px){
+  .split{grid-template-columns:minmax(0,1fr)}
+  .bv-cards{grid-template-columns:minmax(0,1fr)}
+  .hdr,main{padding-left:16px;padding-right:16px}
+  .chart-box{height:260px}
+  .visits-box{height:100px}
+  .fstep .n{font-size:26px}
+}
+</style>
+</head>
+<body>
+
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <h1>RWT Outreach</h1>
+    <p>Email and LinkedIn outbound</p>
+    <input type="password" id="pw" placeholder="Password" autocomplete="current-password">
+    <label style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:var(--text-2);margin:0 0 12px;cursor:pointer">
+      <input type="checkbox" id="remember" checked style="width:16px;height:16px;margin:0"> Keep me signed in on this computer
+    </label>
+    <button class="btn btn-primary" id="loginBtn">Enter</button>
+    <div class="gate-err" id="gateErr"></div>
+    <button class="link-btn" id="demoBtn">Preview with demo data</button>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <div class="hdr">
+      <h1>RWT Outreach</h1>
+      <select id="range" aria-label="Date range for the numbers and chart">
+        <option value="7">Last 7 days</option>
+        <option value="14">Last 14 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="month">This month</option>
+        <option value="quarter">This quarter</option>
+      </select>
+      <span class="muted" id="updated"></span>
+      <button class="btn" id="refreshBtn">Refresh</button>
+      <button class="btn" id="logoutBtn">Log out</button>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Dashboard sections">
+      <button class="tab active" role="tab" id="tabOutreach" data-tab="outreach" aria-selected="true">Outreach</button>
+      <button class="tab" role="tab" id="tabBuyers" data-tab="buyers" aria-selected="false">Buyers</button>
+      <button class="tab" role="tab" id="tabSpintax" data-tab="spintax" aria-selected="false">Spintax generator</button>
+    </nav>
+  </header>
+
+  <div id="paneSpintax" class="pane-off">
+    <div class="spx-note" id="spxNote" hidden>Demo mode: Claude is off here. Log out and sign in with the dashboard password to use it. Editing, checks and export still work.</div>
+    <iframe id="spintaxFrame" title="Spintax generator" data-src="spintax.html"></iframe>
+  </div>
+
+  <main id="paneOutreach">
+    <div class="demo-banner" id="demoBanner">Demo data. Nothing here is real and nothing is saved to HubSpot.</div>
+
+    <section class="panel">
+      <div class="funnel" id="funnel"></div>
+      <div class="tally" id="tally"></div>
+      <div class="muted fnote" id="funnelNote"></div>
+    </section>
+
+    <section class="panel">
+      <div class="split">
+        <div class="chart-wrap" style="min-width:0">
+          <div class="chart-sum" id="chartSum"></div>
+          <div class="lg">
+            <span><span class="sq" style="background:linear-gradient(180deg,#4f9bff,#1a4fb0);border:1px solid #6CB4FF"></span>Total sent</span>
+            <span><span class="sq" style="background:rgba(255,255,255,0.6)"></span>Email</span>
+            <span><span class="sq" style="background:rgba(255,255,255,0.25)"></span>LinkedIn</span>
+            <span><span class="dot" style="background:#FF7A1A;box-shadow:0 0 0 1.5px #0f2757"></span>Email reply</span>
+            <span><span class="dot" style="background:#84CC16;box-shadow:0 0 0 1.5px #0f2757"></span>LinkedIn reply</span>
+            <span><span class="dot hollow" style="border-color:#cfd8ea"></span>Buyer campaign reply</span>
+          </div>
+          <div class="chart-box">
+            <canvas id="chart" role="img" aria-label="Daily messages sent by email and LinkedIn, with replies shown as dots">Daily messages sent and replies.</canvas>
+          </div>
+          <div class="visits" id="visitsWrap">
+            <div class="vh"><b>New website visitors</b><span id="visitsTotal" class="vt"></span></div>
+            <div class="lg" id="visitsLegend">
+              <span><span class="sq" style="background:#3987e5"></span>Email + direct</span>
+              <span><span class="sq" style="background:#d55181"></span>Social (incl. LinkedIn)</span>
+              <span><span class="sq" style="background:#9085e9"></span>Search + AI</span>
+              <span><span class="sq" style="background:rgba(255,255,255,0.22)"></span>Other</span>
+            </div>
+            <div class="visits-box" id="visitsBox"><canvas id="visits" role="img" aria-label="New website visitors per day by source, aligned with the sending days above">New website visitors per day.</canvas></div>
+            <div class="visits-off" id="visitsOff" hidden>Website visits aren't connected yet.</div>
+          </div>
+        </div>
+        <div class="day">
+          <h3 id="dayTitle">Select a day</h3>
+          <div class="muted" id="daySub"></div>
+          <div class="day-list" id="dayList"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="tbl-head">
+        <h2 id="proTitle">Prospects</h2>
+        <span class="muted">BD pipeline in HubSpot</span>
+        <button class="btn" id="addProBtn">Add prospect</button>
+      </div>
+      <div class="chips" id="proChips"></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:21%">Company</th>
+            <th style="width:17%">Stage</th>
+            <th style="width:9%">In stage</th>
+            <th style="width:12%">Source</th>
+            <th style="width:22%">Journey to prospect</th>
+            <th style="width:15%">Follow-up</th>
+            <th style="width:4%"></th>
+          </tr></thead>
+          <tbody id="proBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="tbl-head">
+        <h2 id="leadTitle">Leads generated</h2>
+        <select id="fTime" aria-label="Table time period">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="month">This month</option>
+          <option value="quarter">This quarter</option>
+          <option value="year">This year</option>
+          <option value="all">All time</option>
+        </select>
+        <input id="fQ" placeholder="Search name or company" style="width:190px" aria-label="Search">
+        <select id="fCh" aria-label="Channel filter">
+          <option value="all">All channels</option>
+          <option value="email">Email</option>
+          <option value="linkedin">LinkedIn</option>
+        </select>
+        <select id="fSeq" aria-label="Sequence filter"><option value="all">All sequences</option></select>
+        <button class="btn" id="csvBtn">Export CSV</button>
+      </div>
+      <div class="chips" id="leadChips"></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:8%">Replied</th>
+            <th style="width:20%">Name</th>
+            <th style="width:15%">Sequence</th>
+            <th style="width:9%">Channel</th>
+            <th style="width:6%">Days</th>
+            <th style="width:18%">Status</th>
+            <th style="width:18%">Follow-up</th>
+            <th style="width:4%"></th>
+          </tr></thead>
+          <tbody id="leadBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <main id="paneBuyers" class="pane-off buyers-tab">
+    <div class="demo-banner" id="bvDemo">Demo data. Nothing here is real and nothing is saved to HubSpot.</div>
+    <div class="bv-note" id="bvOff" hidden>Edits are switched off on the server. You can still look at buyers and rename mandates.</div>
+
+    <div class="tbl-head">
+      <h2 style="font-size:18px;margin-right:auto">Buyers</h2>
+      <span class="muted">One place to run each sell-side mandate. Changes save straight to HubSpot.</span>
+      <button class="btn" id="bvAddBtn" hidden>Add buyer to slot</button>
+    </div>
+
+    <div class="bv-cards" id="bvCards" role="group" aria-label="Slots"></div>
+
+    <section class="panel">
+      <div class="tbl-head">
+        <h2 id="bvTitle">Buyers</h2>
+        <span class="muted" id="bvMeta"></span>
+        <input id="bvQ" placeholder="Search buyer or contact" style="width:210px" aria-label="Search buyers">
+      </div>
+      <div class="bv-subline" id="bvSub" hidden><span class="muted" id="bvAsOf"></span><span class="muted" id="bvGaps"></span></div>
+      <div class="bv-msg" id="bvMsg" hidden></div>
+      <div class="chips" id="bvChips"></div>
+      <div class="bv-bar" id="bvBar" hidden></div>
+      <div class="tbl-wrap">
+        <table class="bv-tbl">
+          <thead><tr>
+            <th style="width:3%"><input type="checkbox" id="bvAll" aria-label="Select all buyers shown"></th>
+            <th style="width:17%">Buyer company</th>
+            <th style="width:14%">Contact</th>
+            <th style="width:19%">Slot status</th>
+            <th style="width:15%">Furthest stage</th>
+            <th style="width:20%">Notes</th>
+            <th style="width:9%">Last touch</th>
+            <th style="width:2%"></th>
+          </tr></thead>
+          <tbody id="bvBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal-bg" id="apBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="apTitle">
+    <div class="modal-head">
+      <h2 id="apTitle">Add prospect</h2>
+      <button class="btn btn-sm" id="apClose" aria-label="Close">Close</button>
+    </div>
+    <div class="muted">Existing HubSpot contacts only. Search by name, email or company.</div>
+    <input type="search" id="apQ" placeholder="Type at least 2 characters" autocomplete="off" aria-label="Search HubSpot contacts">
+    <div class="ap-msg" id="apMsg"></div>
+    <div class="ap-list" id="apList"></div>
+    <div id="apPick"></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="abBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="abTitle">
+    <div class="modal-head">
+      <h2 id="abTitle">Add buyer to slot</h2>
+      <button class="btn btn-sm" id="abClose" aria-label="Close">Close</button>
+    </div>
+    <div class="muted">Existing HubSpot companies only. Search by company name.</div>
+    <input type="search" id="abQ" placeholder="Type at least 2 characters" autocomplete="off" aria-label="Search HubSpot companies">
+    <div class="ap-msg" id="abMsg"></div>
+    <div class="ap-list" id="abList"></div>
+    <div id="abPick"></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="ulBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ulTitle" style="max-width:440px">
+    <div class="modal-head"><h2 id="ulTitle">Set back to Unlabeled?</h2></div>
+    <div class="ul-text" id="ulText"></div>
+    <div class="ul-actions"><button class="btn" id="ulCancel">Cancel</button><button class="btn btn-pri" id="ulGo">Set back to Unlabeled</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="toast utoast" id="uToast" role="status" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+/* ================= CONFIG ================= */
+const CONFIG = {
+  apiBase: 'https://outreach-sync-production.up.railway.app',
+  hubspotPortalId: '21247897',
+  salesforgeWorkspaceSlug: 'rwt-capital-workspace',   /* Primebox link: https://app.salesforge.ai/<slug>/primebox/all/<threadId> */
+  autoRefreshMinutes: 5,
+  colors: {
+    emailBar: 'rgba(255,255,255,0.55)', linkedinBar: 'rgba(255,255,255,0.22)',
+    emailDot: '#FF7A1A', linkedinDot: '#84CC16', callDot: '#378ADD', meetingDot: '#7F77DD',
+    area: '#6CB4FF', areaFill: 'rgba(64,140,255,0.35)',
+    grid: 'rgba(255,255,255,0.08)', tick: 'rgba(255,255,255,0.62)', ring: '#0f2757',
+    /* visits strip, validated on the navy surface (blue, magenta, violet adjacent pairs pass CVD and normal-vision checks) */
+    vEmailDirect: '#3987e5', vSocial: '#d55181', vSearch: '#9085e9', vOther: 'rgba(255,255,255,0.22)'
+  }
+};
+
+/* Outreach Contact Status. group: open (lead to work), converted (became a prospect), out (qualified out).
+   The label here is only a first guess: GET /dashboard/options supplies HubSpot's own labels, and the Leads dropdown
+   offers whatever the server marks selectable. */
+const STATUS = {
+  unlabeled:       { label: 'Unlabeled',        group: 'open',      pill: 'p-un' },
+  interested:      { label: 'Interested',       group: 'open',      pill: 'p-open' },
+  not_now:         { label: 'Reconnect later',  group: 'open',      pill: 'p-later' },
+  went_cold:       { label: 'Went cold',        group: 'out',       pill: 'p-lost' },
+  not_a_fit:       { label: 'Not a fit',        group: 'out',       pill: 'p-lost' },
+  wrong_contact:   { label: 'Wrong contact',    group: 'out',       pill: 'p-lost' },
+  not_interested:  { label: 'Not interested',   group: 'out',       pill: 'p-lost' },
+  opted_out:       { label: 'Opted out',        group: 'out',       pill: 'p-lost' },
+  prospect:        { label: 'Prospect',         group: 'converted', pill: 'p-pros' },
+  client:          { label: 'Client',           group: 'converted', pill: 'p-won' },
+  previous_prospect:{ label: 'Previous prospect', group: 'converted', pill: 'p-lost' },
+  proposal_sent:   { label: 'Proposal sent',    group: 'converted', pill: 'p-pros' },
+  past_engagement: { label: 'Past engagement',  group: 'out',       pill: 'p-un' }
+};
+const UNLABELED_RAW = ['', 'no_reply', 'in_sequence', 'replied_unclassified', 'never-contacted'];
+const TALLY_ORDER = ['interested','not_now','unlabeled','prospect','client','previous_prospect','went_cold','not_a_fit','wrong_contact','not_interested','opted_out','ooo'];
+const TALLY_ALWAYS = ['interested','not_now','unlabeled','wrong_contact','not_interested','ooo'];
+const SOURCE = { outbound_email: 'Outbound: email', outbound_linkedin: 'Outbound: LinkedIn', outbound_cold_call: 'Outbound: cold call',
+  inbound_website: 'Inbound: website', inbound_referral: 'Inbound: referral', event: 'Event', other: 'Other' };
+
+/* ================= STATE ================= */
+const S = {
+  mode: 'demo', key: null,
+  daily: [], chartReplies: [], tableReplies: [], stages: [], deals: [],
+  selectedDay: null, leadSel: null, proSel: null, pendingLong: null, pendingReconnect: null,
+  contactOpts: null,   /* contact status options from GET /dashboard/options: [{ value, label, selectable }] */
+  timer: null
+};
+
+/* ================= HELPERS ================= */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+const localDay = iso => ymd(new Date(iso));
+const fmtDay = s => { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+const fmtIso = iso => fmtDay(localDay(iso));
+/* The chart day a reply is drawn on: its own day, or the next sending day if it came in on a day with no sends. */
+function bucketDay(iso) { const d = localDay(iso); if (!S.daily.length) return d; const hit = S.daily.find(x => x.date >= d); return hit ? hit.date : S.daily[S.daily.length - 1].date; }
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const daysSince = iso => Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
+const initials = s => String(s || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+
+function rangeFor(v) {
+  const now = new Date(), to = ymd(now);
+  if (v === 'month') return { from: ymd(new Date(now.getFullYear(), now.getMonth(), 1)), to };
+  if (v === 'quarter') return { from: ymd(new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)), to };
+  if (v === 'year') return { from: ymd(new Date(now.getFullYear(), 0, 1)), to };
+  if (v === 'all') return { from: '2024-01-01', to };
+  return { from: ymd(addDays(now, -(Number(v) - 1))), to };
+}
+function dayList(from, to) {
+  const out = []; let d = new Date(from + 'T00:00:00'); const end = new Date(to + 'T00:00:00');
+  while (d <= end) { out.push(ymd(d)); d = addDays(d, 1); }
+  return out;
+}
+function statusKey(r) {
+  if (r.ooo) return 'ooo';
+  const raw = r.status || '';
+  if (UNLABELED_RAW.includes(raw)) return 'unlabeled';
+  return STATUS[raw] ? raw : 'unlabeled';
+}
+const labelOf = k => k === 'ooo' ? 'Out of office' : STATUS[k].label;
+const groupOf = r => { const k = statusKey(r); return k === 'ooo' ? 'none' : STATUS[k].group; };
+const isLead = r => !r.ooo && r.wasLead === true;
+/* Buyer campaigns are sequences named S1, S2 or S3 plus a space. The server tags those rows with buyerSlot; a row without it is a BD row. */
+const isBuyer = r => !!r.buyerSlot;
+const bdRows = rs => rs.filter(r => !isBuyer(r));
+const buyerSends = d => (d.buyerEmailSent || 0) + (d.buyerLinkedinSent || 0);
+const buyerLine = (sends, replies) => `of which buyer campaigns: ${sends.toLocaleString()} ${sends === 1 ? 'send' : 'sends'}, ${replies} ${replies === 1 ? 'reply' : 'replies'}`;
+const dotColor = r => r.channel === 'linkedin' ? CONFIG.colors.linkedinDot : CONFIG.colors.emailDot;
+/* Chat icon: opens the reply's conversation in Salesforge Primebox. No saved thread id: a grey dashed icon that is not a link. Out-of-office replies get none. */
+const CHAT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"></path></svg>';
+const primeboxUrl = threadId => `https://app.salesforge.ai/${CONFIG.salesforgeWorkspaceSlug}/primebox/all/${encodeURIComponent(threadId)}`;
+const NO_THREAD = 'No Salesforge conversation saved for this reply yet. Older replies fill in after the backfill.';
+function chatIcon(r) {
+  if (r.ooo) return '';
+  if (r.threadId) return `<a class="chat" target="_blank" rel="noopener" href="${esc(primeboxUrl(r.threadId))}" aria-label="Open conversation in Salesforge" title="Open conversation in Salesforge">${CHAT_SVG}</a>`;
+  return `<span class="chat-off" role="img" aria-label="${NO_THREAD}" title="${NO_THREAD}">${CHAT_SVG}</span>`;
+}
+function toast(msg, err) {
+  const t = $('toast'); t.textContent = msg; t.className = 'toast' + (err ? ' err' : ''); t.style.display = 'block';
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500);
+}
+const stageById = id => S.stages.find(s => s.id === String(id));
+const isParked = st => !!st && st.kind === 'open' && /long.?term/i.test(st.label);
+
+/* ================= API ================= */
+async function api(path, opts = {}) {
+  const r = await fetch(CONFIG.apiBase + path, { ...opts, headers: { 'Content-Type': 'application/json', 'x-dashboard-key': S.key, ...(opts.headers || {}) } });
+  if (r.status === 401) { logout(); throw new Error('Session expired. Log in again.'); }
+  if (r.status === 409) throw new Error('This contact has opted out and can\'t be changed here.');
+  if (!r.ok) throw new Error('Server error ' + r.status);
+  return r.json();
+}
+const API = {
+  daily: (f, t) => S.mode === 'demo' ? DEMO.daily(f, t) : api(`/dashboard/daily?from=${f}&to=${t}`).then(d => d.days || []),
+  /* GET /dashboard/visits?from&to -> { days: [{ date, emailDirect, social, searchAi, other }] } (new visitor sessions by source) */
+  visits: (f, t) => S.mode === 'demo' ? DEMO.visits(f, t) : api(`/dashboard/visits?from=${f}&to=${t}`).then(d => d.days || []),
+  replies: (f, t) => S.mode === 'demo' ? DEMO.replies(f, t) : api(`/dashboard/replies?from=${f}&to=${t}&split=1`).then(d => d.replies || []),
+  pipeline: () => S.mode === 'demo' ? DEMO.pipeline() : api('/dashboard/pipeline'),
+  prospects: () => S.mode === 'demo' ? DEMO.prospects() : api('/dashboard/prospects?include=all').then(d => d.prospects || []),
+  setStatus: (id, status, reconnectAt) => S.mode === 'demo' ? DEMO.setStatus(id, status, reconnectAt) : api(`/dashboard/contacts/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: JSON.stringify({ status, reconnectAt }) }),
+  /* POST /dashboard/contacts/:id/unlabel {expected:{status}} -> { status, body }: 200 { ok, status, previous, company: { status, blockLifted, stillBlockedReason }, tasks: { reconnectClosed, closedByLabel } }, 409 stale, 422 not_undoable | has_deal */
+  unlabel: (id, expected) => S.mode === 'demo' ? DEMO.unlabel(id, expected) : apiRaw(`/dashboard/contacts/${encodeURIComponent(id)}/unlabel`, { method: 'POST', body: JSON.stringify({ expected: { status: expected } }) }),
+  leadFollowup: (id, dueAt) => S.mode === 'demo' ? DEMO.leadFollowup(id, dueAt) : api(`/dashboard/contacts/${encodeURIComponent(id)}/followups`, { method: 'POST', body: JSON.stringify({ dueAt }) }),
+  setStage: (dealId, stageId, reconnectAt) => S.mode === 'demo' ? DEMO.setStage(dealId, stageId, reconnectAt) : api(`/dashboard/deals/${encodeURIComponent(dealId)}/stage`, { method: 'PATCH', body: JSON.stringify({ stageId, reconnectAt }) }),
+  followup: (dealId, dueAt) => S.mode === 'demo' ? DEMO.followup(dealId, dueAt) : api(`/dashboard/deals/${encodeURIComponent(dealId)}/followups`, { method: 'POST', body: JSON.stringify({ dueAt }) }),
+  /* Add prospect: both return { status, body } so the server's plain-English reason (blocked, needs confirm) can be shown. */
+  searchContacts: q => S.mode === 'demo' ? DEMO.searchContacts(q) : apiRaw(`/dashboard/contacts/search?q=${encodeURIComponent(q)}`),
+  addProspect: (contactId, source, confirm) => S.mode === 'demo' ? DEMO.addProspect(contactId, source, confirm) : apiRaw('/dashboard/prospects', { method: 'POST', body: JSON.stringify({ contactId, source, confirm }) })
+};
+/* Like api(), but hands back the status and body instead of throwing, and never logs out on its own. Throws only when the server can't be reached. */
+async function apiRaw(path, opts = {}) {
+  let r;
+  try { r = await fetch(CONFIG.apiBase + path, { ...opts, headers: { 'Content-Type': 'application/json', 'x-dashboard-key': S.key, ...(opts.headers || {}) } }); }
+  catch { throw new Error("Can't reach the server. Nothing was changed."); }
+  let body = {}; try { body = await r.json() || {}; } catch {}
+  return { status: r.status, body };
+}
+
+/* ================= DEMO DATA ================= */
+/* demo only: a campaign launch roughly every week and a half gives the sends (and visits) real peaks */
+function demoEmail(date) { const h = [...date].reduce((a, c) => a + c.charCodeAt(0), 0), n = Math.floor(new Date(date + 'T00:00:00').getTime() / 864e5);
+  const k = n % 11; return (k === 0 ? 480 : k === 1 ? 260 : 60) + h % 60; }
+const DEMO = (() => {
+  const first = ['Dan','Kiran','Marc','Tara','Sven','Rita','Jean','Anna','Bao','Paul','Luc','Erin','Gita','Hugh','Nils','Cody','Vera','Walt','Iris','Owen','Fay','Yuri','Quinn','Uma'];
+  const last = ['Harper','Singh','Lavoie','Brandt','Olsen','Chen','Moreau','Kowal','Nguyen','Grant','Dube','Walsh','Patel','Ross','Berg','Fox','Hall','Stone','Park','Reid','Lang','Doyle','Adams','Ito'];
+  const cos = ['Steel Fab','Electric','Hydrovac','Machining','Oilfield Services','Waste Services','Controls','Welding','Rentals','Environmental','Fabricators','Pipe Supply','Trucking','Coatings','Disposal','Hydraulics'];
+  const seqs = [{ id: '55475', name: 'Manufacturing Q3' }, { id: '55480', name: 'Electrical contractors' }, { id: '55491', name: 'Energy services' }, { id: '55502', name: 'Environmental services' }];
+  const pool = ['interested','interested','interested','interested','interested','not_now','not_now','not_now','','','','not_interested','not_interested','not_interested','not_interested',
+    'wrong_contact','wrong_contact','not_a_fit','not_a_fit','went_cold','went_cold','opted_out','prospect','prospect','previous_prospect'];
+  let seed = 11; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const today = new Date(); let id = 1000, did = 5000;
+  const stages = [
+    { id: '39985460', label: 'Prospect', order: 0, kind: 'open', staleDays: 14 },
+    { id: '39985461', label: 'Qualified', order: 1, kind: 'open', staleDays: 30 },
+    { id: '39985462', label: 'NDA Signed', order: 2, kind: 'open', staleDays: 30 },
+    { id: '1445440834', label: 'Financials Received', order: 3, kind: 'open', staleDays: 45 },
+    { id: '39985463', label: 'Valuation/Proposal', order: 4, kind: 'open', staleDays: 21 },
+    { id: '1176450616', label: 'Long Term Lead', order: 5, kind: 'open', staleDays: null },
+    { id: '39985465', label: 'Closed won', order: 6, kind: 'won', staleDays: null },
+    { id: '39985466', label: 'Closed lost', order: 7, kind: 'lost', staleDays: null },
+    { id: '1176450615', label: 'LOST - too small', order: 8, kind: 'lost', staleDays: null },
+    { id: '1445441551', label: 'LOST - Other Advisor', order: 9, kind: 'lost', staleDays: null },
+    { id: '1445441552', label: 'LOST - Valuation Gap', order: 10, kind: 'lost', staleDays: null },
+    { id: '1445441553', label: 'LOST - Fee', order: 11, kind: 'lost', staleDays: null }
+  ];
+  const replies = [], deals = [];
+  function journeyFor(r) {
+    const j = []; const end = new Date(r.repliedAt); const n = 1 + Math.floor(rnd() * 3);
+    for (let i = n; i >= 1; i--) j.push({ type: rnd() < 0.3 ? 'linkedin' : 'email', at: addDays(end, -i * 4).toISOString(), replied: false });
+    j.push({ type: r.channel, at: r.repliedAt, replied: true });
+    if (rnd() < 0.7) j.push({ type: 'call', at: addDays(end, 2).toISOString(), replied: rnd() < 0.8 });
+    if (rnd() < 0.3) j.push({ type: 'meeting', at: addDays(end, 5).toISOString(), replied: true });
+    return j;
+  }
+  function makeDeal(r, stageId, extra = {}) {
+    const created = addDays(new Date(r.repliedAt), 3);
+    const d = { dealId: String(did++), dealName: r.company, stageId, createdAt: created.toISOString(),
+      stageEnteredAt: addDays(created, Math.floor(rnd() * Math.max(1, daysSince(created.toISOString())))).toISOString(),
+      closedAt: null, source: r.channel === 'linkedin' ? 'outbound_linkedin' : 'outbound_email',
+      company: { id: 'c' + r.hubspotId, name: r.company }, contact: { hubspotId: r.hubspotId, name: r.name, email: '' },
+      nextTask: null, journey: journeyFor(r), ...extra };
+    const st = stages.find(s => s.id === stageId);
+    if (st.kind !== 'open') d.closedAt = d.stageEnteredAt;
+    if (isParked(st)) d.nextTask = { id: 't' + did, dueAt: addDays(today, 20 + Math.floor(rnd() * 120)).toISOString(), subject: 'Reconnect' };
+    else if (st.kind === 'open' && rnd() < 0.6) d.nextTask = { id: 't' + did, dueAt: addDays(today, Math.floor(rnd() * 20) - 6).toISOString(), subject: 'Follow up' };
+    deals.push(d); return d;
+  }
+  for (let i = 0; i < 220; i++) {
+    const back = Math.floor(rnd() * 200);
+    const d = addDays(today, -back); d.setHours(8 + Math.floor(rnd() * 9), Math.floor(rnd() * 60));
+    const ooo = rnd() < 0.12;
+    const fn = pick(first), ln = pick(last), s = pick(seqs);
+    const status = ooo ? 'not_now' : (rnd() < 0.02 ? 'client' : pick(pool));
+    const r = { hubspotId: String(id++), name: ooo ? 'Auto-reply' : fn + ' ' + ln, company: ln + ' ' + pick(cos), email: '',
+      sequenceId: s.id, sequenceName: s.name, channel: rnd() < 0.3 ? 'linkedin' : 'email', repliedAt: d.toISOString(), status, ooo };
+    const g = STATUS[status] ? STATUS[status].group : 'open';
+    r.wasLead = !ooo && (g !== 'out' || ['went_cold', 'not_a_fit'].includes(status) || rnd() < 0.3) && status !== 'opted_out';
+    if (STATUS[status] && STATUS[status].group === 'open' && !ooo && rnd() < (status === 'not_now' ? 0.85 : 0.35)) r.nextTask = { id: 'lt' + r.hubspotId, dueAt: addDays(today, status === 'not_now' ? Math.floor(rnd() * 60) - 5 : Math.floor(rnd() * 14) - 4).toISOString(), subject: status === 'not_now' ? 'Reconnect' : 'Follow up' };
+    replies.push(r);
+    if (status === 'prospect') makeDeal(r, pick(['39985460','39985461','39985461','39985462','1445440834','39985463','1176450616']));
+    if (status === 'client') makeDeal(r, '39985465');
+    if (status === 'previous_prospect') makeDeal(r, pick(['1176450615','1445441551','1445441552','1445441553','39985466']));
+  }
+  // Two non-outbound prospects so the source column shows the mix.
+  makeDeal({ hubspotId: '9001', name: 'Glen Archer', company: 'Archer Industrial', channel: 'email', repliedAt: addDays(today, -40).toISOString() }, '39985462', { source: 'outbound_cold_call', journey: [{ type: 'call', at: addDays(today, -44).toISOString(), replied: false }, { type: 'call', at: addDays(today, -40).toISOString(), replied: true }] });
+  makeDeal({ hubspotId: '9002', name: 'Maya Tran', company: 'Tran Coatings', channel: 'email', repliedAt: addDays(today, -12).toISOString() }, '39985461', { source: 'inbound_website', journey: [{ type: 'meeting', at: addDays(today, -10).toISOString(), replied: true }] });
+  /* Buyer campaigns (S1, S2, S3). Buyer-only people, and four people who replied to a BD and a buyer sequence with the buyer reply first.
+     Added after the BD rows so the rest of the demo data is unchanged. A BD row comes before its buyer row in the list. */
+  const bseqs = [{ id: '61001', name: 'S1 Northline', slot: 'S1' }, { id: '61002', name: 'S2 Harbour Partners', slot: 'S2' }, { id: '61003', name: 'S3 Summit Advisory', slot: 'S3' }];
+  const buyerOnly = [['Lena Voss', 'Voss Capital'], ['Omar Haddad', 'Haddad Partners'], ['Priya Nair', 'Nair Growth Equity'], ['Tomas Kerr', 'Kerr Holdings'], ['Elise Roy', 'Roy Industrial Fund'], ['Ben Archer', 'Archer Equity'],
+    ['Mira Sol', 'Sol Ventures'], ['Colin Wray', 'Wray Capital'], ['Dana Frost', 'Frost Partners'], ['Ivo Marsh', 'Marsh Group'], ['Jules Pike', 'Pike Investments'], ['Nora Quill', 'Quill Capital']];
+  const demoRow = (hid, name, company, seq, back, channel, status, wasLead, buyerSlot) => {
+    const d = addDays(today, -back); d.setHours(10, 15);
+    return { hubspotId: hid, name, company, email: '', sequenceId: seq.id, sequenceName: seq.name, channel, repliedAt: d.toISOString(), status, ooo: false, wasLead, buyerSlot };
+  };
+  buyerOnly.forEach(([name, company], i) => {
+    const status = i % 3 === 0 ? 'interested' : '';
+    replies.push(demoRow(String(id++), name, company, bseqs[i % 3], 1 + (i * 3) % 28, i % 4 === 3 ? 'linkedin' : 'email', status, status === 'interested', bseqs[i % 3].slot));
+  });
+  [['Marta Quist', 'Quist Fabricators'], ['Hugo Lind', 'Lind Hydraulics'], ['Sana Rao', 'Rao Controls'], ['Piet Bos', 'Bos Machining']].forEach(([name, company], k) => {
+    const hid = String(id++), bs = bseqs[k % 3], buyerBack = 24 - k * 4;
+    replies.push(demoRow(hid, name, company, seqs[k % seqs.length], buyerBack - 6, 'email', 'interested', true, null));          /* the BD reply, later */
+    replies.push(demoRow(hid, name, company, bs, buyerBack, k % 2 ? 'linkedin' : 'email', 'interested', true, bs.slot));   /* the buyer reply came first */
+  });
+  /* demo only: most replies have a saved conversation, some do not (so the grey icon shows) */
+  replies.forEach(r => { if (!r.ooo && Number(r.hubspotId) % 4 !== 0) r.threadId = 'mth_demo' + r.hubspotId + (r.buyerSlot || ''); });
+  const find = id => replies.find(x => x.hubspotId === id);
+  /* status is contact-level: both rows of a person carry the same status */
+  function mirror(r) { replies.forEach(x => { if (x !== r && x.hubspotId === r.hubspotId) { x.status = r.status; x.wasLead = r.wasLead; } }); }
+  const syncContact = (d) => { const r = find(d.contact.hubspotId); if (!r) return; const st = stages.find(s => s.id === d.stageId); r.status = st.kind === 'won' ? 'client' : st.kind === 'lost' ? 'previous_prospect' : 'prospect'; r.wasLead = true; mirror(r); };
+  return {
+    daily: (from, to) => dayList(from, to).map(date => {
+      const wd = new Date(date + 'T00:00:00').getDay(), weekend = wd === 0 || wd === 6;
+      const h = [...date].reduce((a, c) => a + c.charCodeAt(0), 0);
+      const e = demoEmail(date);
+      const em = weekend ? 0 : e, li = weekend ? 0 : 55 + h % 45;
+      /* demo only: part of each day's sends are buyer campaigns */
+      return { date, emailSent: em, linkedinSent: li, buyerEmailSent: Math.round(em * (0.15 + (h % 7) / 40)), buyerLinkedinSent: Math.round(li * (0.1 + (h % 5) / 30)) };
+    }),
+    visits: (from, to) => dayList(from, to).map(date => {
+      const wd = new Date(date + 'T00:00:00').getDay(), weekend = wd === 0 || wd === 6;
+      const h = [...date].reduce((a, c) => a + c.charCodeAt(0), 0);
+      const e = weekend ? 0 : demoEmail(date), prev = weekend ? 0 : demoEmail(ymd(addDays(new Date(date + 'T00:00:00'), -1)));
+      /* demo only: email + direct visits follow that day's and the previous day's sends */
+      return { date, emailDirect: Math.round(e / 30 + prev / 70) + h % 3, social: 1 + h % 4, searchAi: (weekend ? 3 : 6) + h % 7, other: h % 5 === 0 ? 1 : 0 };
+    }),
+    replies: (from, to) => replies.filter(r => { const k = localDay(r.repliedAt); return k >= from && k <= to; }).map(r => ({ ...r })),
+    pipeline: () => ({ pipelineId: '14943271', stages }),
+    prospects: () => deals.map(d => ({ ...d, journey: [...d.journey] })),
+    setStatus: (hid, status, reconnectAt) => {
+      const r = find(hid); if (!r) return { ok: true, status };
+      if (r.status === 'opted_out') throw new Error('This contact has opted out and can\'t be changed here.');
+      const wasLater = r.status === 'not_now';
+      r.status = status; if (STATUS[status].group !== 'out') r.wasLead = true; mirror(r);
+      if (status === 'not_now') r.nextTask = { id: 'lt' + Date.now(), dueAt: new Date((reconnectAt || ymd(addDays(new Date(), 60))) + 'T16:00:00').toISOString(), subject: 'Reconnect' };
+      else if (STATUS[status].group !== 'open' || wasLater) r.nextTask = null; /* auto-close BD queue tasks */
+      if (status === 'prospect' && !deals.some(d => d.contact.hubspotId === hid && stages.find(s => s.id === d.stageId).kind === 'open')) {
+        const d = makeDeal(r, '39985460'); d.createdAt = new Date().toISOString(); d.stageEnteredAt = d.createdAt; d.nextTask = null;
+        return { ok: true, status, dealId: d.dealId };
+      }
+      return { ok: true, status, nextTask: r.nextTask || null };
+    },
+    /* demo only: contacts whose id ends in 7 act as if another Interested contact keeps the block (amber); ending in 3 as if only the normal recency pause is left (plain success) */
+    unlabel: (hid, expected) => {
+      const r = find(hid);
+      if (!r) return { status: 404, body: { error: 'not_found', message: 'No HubSpot contact with that ID.' } };
+      if (!['interested', 'not_now', 'not_a_fit', 'not_interested', 'went_cold', 'wrong_contact'].includes(expected)) return { status: 422, body: { error: 'not_undoable', message: 'Only the six labels can be undone here.' } };
+      if (r.status !== expected) return { status: 409, body: { error: 'stale', current: r.status } };
+      if (deals.some(d => d.contact.hubspotId === hid)) return { status: 422, body: { error: 'has_deal', message: 'This contact has a deal in the BD pipeline, so the label cannot be undone here.' } };
+      const hadTask = expected === 'not_now' && !!r.nextTask;
+      r.status = 'replied_unclassified'; r.wasLead = true; if (hadTask) r.nextTask = null; mirror(r);
+      const tail = hid.slice(-1);
+      return { status: 200, body: { ok: true, contactId: hid, status: 'replied_unclassified', previous: expected,
+        company: { status: 'replied_status_unclear', blockLifted: tail !== '7' && ['interested', 'not_now', 'not_interested', 'not_a_fit', 'went_cold'].includes(expected),
+          stillBlockedReason: tail === '7' ? { interested: 'active_conversation', not_now: 'not_now', not_interested: 'not_interested', not_a_fit: 'not_a_fit', went_cold: 'not_now', wrong_contact: 'active_conversation' }[expected] : tail === '3' ? 'recently_contacted' : null },
+        tasks: { reconnectClosed: hadTask ? 1 : 0, closedByLabel: ['not_interested', 'not_a_fit', 'went_cold', 'wrong_contact'].includes(expected) && tail === '5' ? 2 : 0 } } };
+    },
+    leadFollowup: (hid, dueAt) => { const r = find(hid); r.nextTask = { id: 'lt' + Date.now(), dueAt: new Date(dueAt + 'T16:00:00').toISOString(), subject: 'Follow up' }; return r.nextTask; },
+    setStage: (dealId, stageId, reconnectAt) => {
+      const d = deals.find(x => x.dealId === dealId); const st = stages.find(s => s.id === stageId);
+      d.stageId = stageId; d.stageEnteredAt = new Date().toISOString(); d.closedAt = st.kind === 'open' ? null : d.stageEnteredAt;
+      if (reconnectAt) d.nextTask = { id: 't' + Date.now(), dueAt: new Date(reconnectAt + 'T16:00:00').toISOString(), subject: 'Reconnect' };
+      syncContact(d); return { ...d };
+    },
+    followup: (dealId, dueAt) => { const d = deals.find(x => x.dealId === dealId); d.nextTask = { id: 't' + Date.now(), dueAt: new Date(dueAt + 'T16:00:00').toISOString(), subject: 'Follow up' }; return d.nextTask; },
+    /* Add prospect, demo: searches the made-up contacts above with the same rules as the server. */
+    searchContacts: q => {
+      const s = q.toLowerCase();
+      const seen = new Set();   /* one result per person, even when they have a BD row and a buyer row */
+      const hits = replies.filter(r => !r.ooo && (r.name + ' ' + r.company).toLowerCase().includes(s) && !seen.has(r.hubspotId) && seen.add(r.hubspotId)).slice(0, 10);
+      return { status: 200, body: { writeEnabled: true, sources: Object.entries(SOURCE).map(([value, label]) => ({ value, label })), results: hits.map(demoJudge) } };
+    },
+    addProspect: (cid, source, confirm) => {
+      const r = find(cid); if (!r) return { status: 404, body: { error: 'not_found', message: 'No HubSpot contact with that ID. Nothing was created.' } };
+      const j = demoJudge(r);
+      const own = j.openDealId && deals.find(d => d.dealId === j.openDealId).contact.hubspotId === cid;
+      if (r.status === 'prospect' && own) return { status: 200, body: { ok: true, dealId: j.openDealId, dealCreated: false, alreadyProspect: true, stillInSequence: j.flags.inSequenceNow } };
+      if (j.blocked) return { status: 409, body: { error: j.blocked.reason, message: j.blocked.message, dealId: j.openDealId } };
+      if (j.warnings.length && confirm !== true) return { status: 409, body: { error: 'confirm_required', warnings: j.warnings } };
+      r.status = 'prospect'; r.wasLead = true; r.nextTask = null; mirror(r);
+      const d = makeDeal(r, '39985460', { source }); d.createdAt = new Date().toISOString(); d.stageEnteredAt = d.createdAt; d.nextTask = null;
+      return { status: 200, body: { ok: true, dealId: d.dealId, dealCreated: true, alreadyProspect: false, stillInSequence: j.flags.inSequenceNow } };
+    }
+  };
+  function demoJudge(r) {
+    const mine = deals.filter(d => d.contact.hubspotId === r.hubspotId), kind = d => stages.find(s => s.id === d.stageId).kind;
+    const open = mine.find(d => kind(d) === 'open');
+    const flags = {
+      hasOpenDeal: !!open, companyClosedWon: r.status === 'client' || mine.some(d => kind(d) === 'won'),
+      optedOut: r.status === 'opted_out', previousProspect: r.status === 'previous_prospect' || mine.some(d => kind(d) === 'lost'),
+      inSequenceNow: Number(r.hubspotId) % 7 === 0   /* demo only: some contacts look still enrolled */
+    };
+    const blocked = flags.optedOut ? 'opted_out' : flags.companyClosedWon ? 'closed_won' : flags.hasOpenDeal ? 'open_deal' : null;
+    const warnings = [flags.previousProspect && 'previous_prospect', flags.inSequenceNow && 'in_sequence'].filter(Boolean);
+    return {
+      hubspotId: r.hubspotId, name: r.name, company: r.company, title: '',
+      email: r.name.split(' ')[0].toLowerCase() + '@' + r.company.split(' ')[0].toLowerCase() + '.ca',
+      status: r.status, statusLabel: STATUS[r.status] ? STATUS[r.status].label : '', inSequence: flags.inSequenceNow, flags,
+      buyerCampaignOnly: replies.some(x => x.hubspotId === r.hubspotId && x.buyerSlot) && !replies.some(x => x.hubspotId === r.hubspotId && !x.buyerSlot),
+      openDealId: open ? open.dealId : null,
+      blocked: blocked ? { reason: blocked, message: AP_DEMO_MSG[blocked] } : null,
+      warnings: warnings.map(w => ({ reason: w, message: AP_DEMO_MSG[w] }))
+    };
+  }
+})();
+/* Demo only: the live server sends its own wording. */
+const AP_DEMO_MSG = {
+  opted_out: 'This contact or their company has opted out, so they cannot be made a prospect.',
+  closed_won: 'This company is already a client (Closed won), so it cannot be added as a prospect.',
+  open_deal: 'This contact or their company already has an open deal in the BD pipeline.',
+  previous_prospect: 'This company was a prospect before and the deal was lost.',
+  in_sequence: 'This contact is still active or paused in a Salesforge sequence. Adding them does not stop it: stop it in Salesforge.'
+};
+
+/* ================= CHART ================= */
+let chart = null;
+const dotsPlugin = {
+  id: 'replyDots',
+  afterDatasetsDraw(ch) {
+    const ctx = ch.ctx, meta = ch.getDatasetMeta(1), y0 = ch.scales.y.getPixelForValue(0);
+    const byDay = {};
+    S.chartReplies.filter(r => !r.ooo).forEach(r => { (byDay[bucketDay(r.repliedAt)] ||= []).push(r); });
+    S.daily.forEach((d, i) => {
+      const bar = meta.data[i]; if (!bar) return;
+      const list = byDay[d.date] || [];
+      const step = 13, maxDots = Math.max(1, Math.floor((y0 - ch.chartArea.top - 10) / step));
+      let y = y0 - 9;
+      list.slice(0, maxDots).forEach(r => {
+        ctx.beginPath(); ctx.arc(bar.x, y, 5, 0, Math.PI * 2);
+        if (isBuyer(r)) { ctx.lineWidth = 2; ctx.strokeStyle = dotColor(r); ctx.stroke(); }   /* buyer campaign reply: hollow */
+        else { ctx.fillStyle = dotColor(r); ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = CONFIG.colors.ring; ctx.stroke(); }
+        y -= step;
+      });
+      if (list.length > maxDots) { ctx.fillStyle = CONFIG.colors.tick; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('+' + (list.length - maxDots), bar.x, y + 4); }
+    });
+  }
+};
+const selectPlugin = {
+  id: 'selectedDay',
+  beforeDatasetsDraw(ch) {
+    const i = S.daily.findIndex(d => d.date === S.selectedDay); if (i < 0) return;
+    const x = ch.scales.x, w = (x.getPixelForValue(1) - x.getPixelForValue(0)) || 20, cx = x.getPixelForValue(i);
+    const { top, bottom } = ch.chartArea;
+    ch.ctx.save(); ch.ctx.fillStyle = 'rgba(255,255,255,0.08)'; ch.ctx.fillRect(cx - w / 2, top, w, bottom - top); ch.ctx.restore();
+  }
+};
+/* Bars take their top edge from the total-sent curve: email is clipped to the curve, and the LinkedIn
+   segment is filled from the top of the email bar up to the curve. */
+function areaClip(ch) {
+  const pts = ch.getDatasetMeta(0).data, a = ch.chartArea, ctx = ch.ctx; if (!pts.length) return false;
+  ctx.beginPath(); ctx.moveTo(a.left, a.bottom); ctx.lineTo(a.left, pts[0].y); ctx.lineTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i - 1], c = pts[i];
+    if (p.cp2x !== undefined && c.cp1x !== undefined) ctx.bezierCurveTo(p.cp2x, p.cp2y, c.cp1x, c.cp1y, c.x, c.y); else ctx.lineTo(c.x, c.y);
+  }
+  const l = pts[pts.length - 1]; ctx.lineTo(a.right, l.y); ctx.lineTo(a.right, a.bottom); ctx.closePath(); ctx.clip(); return true;
+}
+const curvePlugin = {
+  id: 'curveBars',
+  beforeDatasetDraw(ch, args) {
+    if (args.index === 1) { ch.ctx.save(); areaClip(ch); }
+    if (args.index === 2) {
+      const ctx = ch.ctx, meta = ch.getDatasetMeta(2), top = ch.chartArea.top;
+      ctx.save(); areaClip(ch); ctx.fillStyle = CONFIG.colors.linkedinBar;
+      const em = ch.data.datasets[1].data, li = ch.data.datasets[2].data;
+      meta.data.forEach((b, i) => { if (!((em[i] || 0) + (li[i] || 0))) return; const w = b.width, base = b.base; if (base > top) ctx.fillRect(b.x - w / 2, top, w, base - top); });
+      ctx.restore(); return false;
+    }
+  },
+  afterDatasetDraw(ch, args) { if (args.index === 1) ch.ctx.restore(); }
+};
+function drawChart() {
+  const c = CONFIG.colors;
+  const data = {
+    labels: S.daily.map(d => fmtDay(d.date)),
+    datasets: [
+      { type: 'line', label: 'Total sent', data: S.daily.map(d => d.emailSent + d.linkedinSent), borderColor: c.area, borderWidth: 2.5,
+        backgroundColor: ctx => { const a = ctx.chart.chartArea; if (!a) return c.areaFill; const g = ctx.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom); g.addColorStop(0, 'rgba(79,155,255,0.62)'); g.addColorStop(0.6, 'rgba(38,98,214,0.32)'); g.addColorStop(1, 'rgba(20,60,160,0.06)'); return g; },
+        fill: 'origin', cubicInterpolationMode: 'monotone', capBezierPoints: true, pointRadius: 0, pointHoverRadius: 0, order: 3 },
+      { type: 'bar', label: 'Email', data: S.daily.map(d => d.emailSent), backgroundColor: c.emailBar, stack: 's', barPercentage: 0.5, categoryPercentage: 0.9, maxBarThickness: 16, order: 2 },
+      { type: 'bar', label: 'LinkedIn', data: S.daily.map(d => d.linkedinSent), backgroundColor: c.linkedinBar, stack: 's', borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: 'bottom', barPercentage: 0.5, categoryPercentage: 0.9, maxBarThickness: 16, order: 2 }
+    ]
+  };
+  if (chart) { chart.data = data; chart.update(); return; }
+  chart = new Chart($('chart'), {
+    data,
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { filter: t => t.datasetIndex > 0, callbacks: { afterBody: it => {
+        const day = S.daily[it[0].dataIndex], rs = S.chartReplies.filter(r => !r.ooo && bucketDay(r.repliedAt) === day.date);
+        const n = rs.length, nb = rs.filter(isBuyer).length, sb = buyerSends(day);
+        const lines = [n ? n + (n === 1 ? ' reply' : ' replies') : 'No replies'];
+        if (sb || nb) lines.push(buyerLine(sb, nb));
+        return lines; } } } },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { color: c.tick, font: { size: 11 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
+        y: { stacked: true, beginAtZero: true, grace: '12%', grid: { color: c.grid }, border: { display: false }, ticks: { color: c.tick, font: { size: 11 } }, afterFit: sc => { sc.width = Y_AXIS_W; } }
+      },
+      onClick: e => { const i = Math.round(chart.scales.x.getValueForPixel(e.x)); if (i >= 0 && i < S.daily.length) selectDay(S.daily[i].date); }
+    },
+    plugins: [selectPlugin, curvePlugin, dotsPlugin]
+  });
+}
+
+/* ================= WEBSITE VISITS STRIP ================= */
+/* Same days, same width and the same fixed y-axis width as the outbound chart, so each visits bar sits
+   directly under that day's send bar. Weekend visits fold into the next sending day, like replies. */
+const Y_AXIS_W = 44;
+let vchart = null;
+function selectDay(date) { S.selectedDay = date; drawChart(); drawVisits(); drawDay(); }
+function visitsByDay() {
+  const out = Object.fromEntries(S.daily.map(d => [d.date, { emailDirect: 0, social: 0, searchAi: 0, other: 0 }]));
+  (S.visits || []).forEach(v => { const k = bucketDay(v.date + 'T12:00:00'); const o = out[k]; if (!o) return;
+    o.emailDirect += v.emailDirect || 0; o.social += v.social || 0; o.searchAi += v.searchAi || 0; o.other += v.other || 0; });
+  return out;
+}
+const vTotal = o => o.emailDirect + o.social + o.searchAi + o.other;
+function drawVisits() {
+  const off = S.visits === null;
+  $('visitsBox').hidden = off; $('visitsLegend').hidden = off; $('visitsOff').hidden = !off;
+  if (off) { $('visitsTotal').textContent = ''; return; }
+  const c = CONFIG.colors, by = visitsByDay(), days = S.daily.map(d => by[d.date]);
+  const sum = days.reduce((a, o) => a + vTotal(o), 0), ed = days.reduce((a, o) => a + o.emailDirect, 0);
+  $('visitsTotal').textContent = `${sum.toLocaleString()} in this period · ${ed.toLocaleString()} from email + direct`;
+  const bar = (label, key, color, top) => ({ label, data: days.map(o => o[key]), backgroundColor: color, stack: 'v',
+    borderColor: c.ring, borderWidth: { top: 1.5, left: 0, right: 0, bottom: 0 }, borderSkipped: false,
+    borderRadius: top ? { topLeft: 3, topRight: 3 } : 0, barPercentage: 0.5, categoryPercentage: 0.9, maxBarThickness: 16 });
+  const data = { labels: S.daily.map(d => fmtDay(d.date)), datasets: [
+    bar('Email + direct', 'emailDirect', c.vEmailDirect), bar('Social (incl. LinkedIn)', 'social', c.vSocial),
+    bar('Search + AI', 'searchAi', c.vSearch), bar('Other', 'other', c.vOther, true)] };
+  if (vchart) { vchart.data = data; vchart.update(); return; }
+  vchart = new Chart($('visits'), { type: 'bar', data, plugins: [selectPlugin],
+    options: { responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, filter: t => t.raw > 0,
+        callbacks: { footer: it => { const o = days[it[0].dataIndex]; return vTotal(o) + ' new visitors'; } } } },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { display: false } },
+        y: { stacked: true, beginAtZero: true, grace: '10%', grid: { color: c.grid }, border: { display: false },
+          ticks: { color: c.tick, font: { size: 10 }, maxTicksLimit: 3, precision: 0 }, afterFit: sc => { sc.width = Y_AXIS_W; } }
+      },
+      onClick: e => { const i = Math.round(vchart.scales.x.getValueForPixel(e.x)); if (i >= 0 && i < S.daily.length) selectDay(S.daily[i].date); }
+    } });
+}
+
+/* ================= FUNNEL, TALLY, DAY PANEL ================= */
+function drawFunnel() {
+  const all = S.chartReplies, rs = bdRows(all), replied = rs.filter(r => !r.ooo);   /* funnel and tally count BD rows only */
+  const leads = rs.filter(isLead);
+  const became = leads.filter(r => groupOf(r) === 'converted').length;
+  const won = leads.filter(r => statusKey(r) === 'client').length;
+  const { from, to } = rangeFor($('range').value);
+  const step = (n, l) => `<div class="fstep"><span class="n">${n.toLocaleString()}</span><span class="l">${l}</span></div>`;
+  $('funnel').innerHTML = step(replied.length, 'Replied') + '<span class="farrow">›</span>' + step(leads.length, 'Leads generated') +
+    '<span class="farrow">›</span>' + step(became, 'Became prospects') + '<span class="farrow">›</span>' + step(won, 'Won') +
+    `<span class="muted" style="margin-left:auto">${fmtDay(from)} to ${fmtDay(to)}</span>`;
+  const counts = {}; rs.forEach(r => { const k = statusKey(r); counts[k] = (counts[k] || 0) + 1; });
+  $('tally').innerHTML = `<span class="tl">All replies<b>${rs.length}</b></span>` + TALLY_ORDER.filter(k => TALLY_ALWAYS.includes(k) || counts[k])
+    .map(k => `<span class="tl">${labelOf(k)}<b>${(counts[k] || 0).toLocaleString()}</b></span>`).join('');
+  const nb = all.filter(r => !r.ooo && isBuyer(r)).length;
+  $('funnelNote').textContent = `Buyer campaigns not counted here: ${nb.toLocaleString()} ${nb === 1 ? 'reply' : 'replies'}`;
+  /* the chart is gross: every sequence, buyer campaigns included */
+  const sent = S.daily.reduce((a, d) => a + d.emailSent + d.linkedinSent, 0), bs = S.daily.reduce((a, d) => a + buyerSends(d), 0);
+  $('chartSum').textContent = `Sent ${sent.toLocaleString()} (buyer campaigns ${bs.toLocaleString()}) · Replies ${all.filter(r => !r.ooo).length.toLocaleString()} (buyer ${nb.toLocaleString()})`;
+}
+function drawDay() {
+  if (!S.selectedDay) { $('dayTitle').textContent = 'Select a day'; $('daySub').textContent = ''; $('dayList').innerHTML = ''; return; }
+  const d = S.daily.find(x => x.date === S.selectedDay) || { emailSent: 0, linkedinSent: 0 };
+  const rs = S.chartReplies.filter(r => bucketDay(r.repliedAt) === S.selectedDay).sort((a, b) => a.ooo - b.ooo);
+  const carried = rs.filter(r => localDay(r.repliedAt) !== S.selectedDay).length;
+  const n = rs.filter(r => !r.ooo).length;
+  $('dayTitle').textContent = new Date(S.selectedDay + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  $('daySub').textContent = `${d.emailSent.toLocaleString()} emails · ${d.linkedinSent.toLocaleString()} LinkedIn · ${n} ${n === 1 ? 'reply' : 'replies'}${carried ? ` (${carried} from the weekend)` : ''}`;
+  const nbDay = rs.filter(r => !r.ooo && isBuyer(r)).length, sbDay = buyerSends(d);
+  if (sbDay || nbDay) $('daySub').textContent += ' · ' + buyerLine(sbDay, nbDay);
+  if (S.visits) { const v = visitsByDay()[S.selectedDay]; if (v) $('daySub').textContent += ` · ${vTotal(v)} new website ${vTotal(v) === 1 ? 'visitor' : 'visitors'} (${v.emailDirect} email + direct)`; }
+  $('dayList').innerHTML = rs.length ? rs.map(r => `
+    <div class="day-row">
+      <span class="dot${isBuyer(r) ? ' hollow' : ''}" style="${isBuyer(r) ? 'border-color:' + dotColor(r) : 'background:' + (r.ooo ? '#bdbbb4' : dotColor(r))}"></span>
+      <div style="min-width:0;flex:1"><div class="nm">${esc(r.name)}</div><div class="co">${esc(r.company)}</div></div>
+      ${isBuyer(r) ? `<span class="tag buyer">Buyer ${esc(r.buyerSlot)}</span>` : ''}<span class="tag">${labelOf(statusKey(r))}</span>${chatIcon(r)}
+    </div>`).join('') : '<div class="muted">No replies this day.</div>';
+}
+
+/* ================= PROSPECTS ================= */
+const ICON = {
+  email: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5 8 9l5.5-4.5"/></svg>',
+  linkedin: '<svg viewBox="0 0 16 16"><text x="8" y="12" text-anchor="middle" font-size="10" font-weight="700" font-family="Arial" fill="currentColor">in</text></svg>',
+  call: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4.5 2.5h2l1 3-1.5 1a8 8 0 0 0 3.5 3.5l1-1.5 3 1v2a1.5 1.5 0 0 1-1.5 1.5A10.5 10.5 0 0 1 3 4a1.5 1.5 0 0 1 1.5-1.5z"/></svg>',
+  meeting: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 7h11M5.5 2v3M10.5 2v3"/></svg>'
+};
+const JCOLOR = { email: '#FF7A1A', linkedin: '#84CC16', call: '#378ADD', meeting: '#7F77DD' };
+const JNAME = { email: 'Email', linkedin: 'LinkedIn', call: 'Call', meeting: 'Meeting' };
+function journeyHtml(j) {
+  if (!j || !j.length) return '<span class="muted">No touches recorded</span>';
+  const list = j.slice(-8), hidden = j.length - list.length;
+  const bits = list.map(t => {
+    const what = t.type === 'call' ? (t.replied ? 'connected' : 'no answer') : t.type === 'meeting' ? 'held' : (t.replied ? 'replied' : 'no reply');
+    return `<span class="ji${t.replied ? ' hit' : ''}" style="${t.replied ? 'background:' + JCOLOR[t.type] : ''}" title="${JNAME[t.type]}, ${fmtIso(t.at)}, ${what}">${ICON[t.type]}</span>`;
+  });
+  return `<div class="journey">${hidden ? `<span class="ji more" title="${hidden} earlier touches">+${hidden}</span><span class="jsep"></span>` : ''}${bits.join('<span class="jsep"></span>')}</div>`;
+}
+function stageKind(d) { const st = stageById(d.stageId); return !st ? 'open' : isParked(st) ? 'parked' : st.kind; }
+const PRO_PRESETS = [['active', 'Active'], ['parked', 'Long term'], ['won', 'Won'], ['lost', 'Lost'], ['all', 'All']];
+const presetsHtml = list => `<span class="presets">Show:${list.map(([k, l]) => `<button class="preset" data-p="${k}">${l}</button>`).join('')}</span><span class="chipsep"></span>`;
+function presetStages(p) { return S.stages.filter(s => { const k = isParked(s) ? 'parked' : s.kind; return p === 'all' || (p === 'active' ? k === 'open' : k === p); }).map(s => s.id); }
+function drawProspects() {
+  if (!S.proSel) S.proSel = new Set(presetStages('active'));
+  const counts = {}; S.deals.forEach(d => { counts[d.stageId] = (counts[d.stageId] || 0) + 1; });
+  const open = S.deals.filter(d => ['open', 'parked'].includes(stageKind(d))).length;
+  $('proChips').innerHTML = presetsHtml(PRO_PRESETS) + S.stages.map(s => `<button class="chip${S.proSel.has(s.id) ? ' on' : ''}" data-id="${s.id}">${esc(s.label)}<span class="c">${counts[s.id] || 0}</span></button>`).join('');
+  $('proTitle').textContent = `Prospects ${open} open`;
+  const rows = S.deals.filter(d => S.proSel.has(d.stageId))
+    .sort((a, b) => (stageById(b.stageId)?.order ?? 0) - (stageById(a.stageId)?.order ?? 0) || (stageEntered(b) ? daysSince(stageEntered(b)) : 0) - (stageEntered(a) ? daysSince(stageEntered(a)) : 0));
+  $('proBody').innerHTML = rows.length ? rows.map(proRow).join('') : '<tr><td colspan="7" class="empty">No deals here.</td></tr>';
+}
+function proRow(d) {
+  const st = stageById(d.stageId), kind = stageKind(d), entered = stageEntered(d), days = entered ? daysSince(entered) : null;
+  let dayCell = '';
+  if (kind === 'open' && days === null) { dayCell = '<span class="muted">\u2013</span>'; }
+  else if (kind === 'open') { const s = st.staleDays || 30; const cls = days <= s * 0.5 ? 'g' : days <= s ? 'a' : 'r'; dayCell = `<span class="days ${cls}">${days}d</span>${days > s ? '<span class="stale">Stale</span>' : ''}`; }
+  else if (kind === 'parked') dayCell = `<span class="days a">${days}d</span>`;
+  else dayCell = `<span class="muted">${d.closedAt ? fmtIso(d.closedAt) : ''}</span>`;
+  const opts = S.stages.map(s => `<option value="${s.id}"${s.id === d.stageId ? ' selected' : ''}>${esc(s.label)}</option>`).join('');
+  let fu;
+  if (S.pendingLong === d.dealId) {
+    fu = `<div class="fu"><input type="date" id="lt-${d.dealId}" value="${ymd(addDays(new Date(), 90))}"><button class="btn btn-sm" data-act="lt-save" data-id="${d.dealId}">Set</button><button class="btn btn-sm" data-act="lt-cancel" data-id="${d.dealId}">Cancel</button></div>`;
+  } else if (d._addFu) {
+    fu = `<div class="fu"><input type="date" id="fu-${d.dealId}" value="${ymd(addDays(new Date(), 7))}"><button class="btn btn-sm" data-act="fu-save" data-id="${d.dealId}">Add</button></div>`;
+  } else if (d.nextTask) {
+    const over = new Date(d.nextTask.dueAt) < new Date();
+    fu = `<div class="fu"><span class="${over ? 'over' : ''}" title="${esc(d.nextTask.subject)}">${over ? 'Overdue ' : ''}${fmtIso(d.nextTask.dueAt)}</span><button class="btn btn-sm" data-act="fu-add" data-id="${d.dealId}" title="Add another follow-up">+</button></div>`;
+  } else if (kind === 'open' || kind === 'parked') {
+    fu = `<button class="btn btn-sm" data-act="fu-add" data-id="${d.dealId}">Add follow-up</button>`;
+  } else fu = '';
+  const who = d.contact?.name || '';
+  return `<tr class="${kind === 'lost' ? 'dim' : ''}">
+    <td><div class="who"><span class="av">${esc(initials(d.company?.name || d.dealName))}</span><div style="min-width:0"><div>${esc(d.company?.name || d.dealName)}</div><div class="sub">${esc(who)}</div></div></div></td>
+    <td><select data-act="stage" data-id="${d.dealId}" aria-label="Stage for ${esc(d.dealName)}">${opts}</select></td>
+    <td>${dayCell}</td>
+    <td><span class="pill p-src">${esc(SOURCE[d.source] || 'Other')}</span></td>
+    <td>${journeyHtml(d.journey)}</td>
+    <td>${fu}</td>
+    <td><a class="hs" target="_blank" rel="noopener" href="https://app.hubspot.com/contacts/${CONFIG.hubspotPortalId}/record/0-3/${encodeURIComponent(d.dealId)}" title="Open deal in HubSpot">HS</a></td>
+  </tr>`;
+}
+async function onStageChange(dealId, stageId, reconnectAt) {
+  const d = S.deals.find(x => x.dealId === dealId); const prev = d.stageId;
+  try {
+    const upd = await API.setStage(dealId, stageId, reconnectAt);
+    Object.assign(d, upd); S.pendingLong = null;
+    toast('Saved to HubSpot: ' + stageById(stageId).label);
+    await reloadReplies();
+  } catch (e) { d.stageId = prev; toast('Could not save. ' + e.message, true); }
+  drawProspects();
+}
+$('proBody').addEventListener('change', e => {
+  const el = e.target; if (el.dataset.act !== 'stage') return;
+  const st = stageById(el.value);
+  if (isParked(st)) { S.pendingLong = el.dataset.id; S.deals.find(x => x.dealId === el.dataset.id)._pendingStage = el.value; drawProspects(); return; }
+  onStageChange(el.dataset.id, el.value);
+});
+$('proBody').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const id = b.dataset.id, d = S.deals.find(x => x.dealId === id);
+  if (b.dataset.act === 'lt-cancel') { S.pendingLong = null; drawProspects(); }
+  if (b.dataset.act === 'lt-save') { const v = $('lt-' + id).value; if (!v) return toast('Pick a reconnect date.', true); await onStageChange(id, d._pendingStage, v); }
+  if (b.dataset.act === 'fu-add') { d._addFu = true; drawProspects(); }
+  if (b.dataset.act === 'fu-save') {
+    const v = $('fu-' + id).value; if (!v) return toast('Pick a date.', true);
+    try { d.nextTask = await API.followup(id, v); d._addFu = false; toast('Follow-up task added to the BD Tasks queue'); } catch (err) { toast('Could not save. ' + err.message, true); }
+    drawProspects();
+  }
+});
+$('proChips').addEventListener('click', e => {
+  const p = e.target.closest('.preset'); if (p) { S.proSel = new Set(presetStages(p.dataset.p)); return drawProspects(); }
+  const b = e.target.closest('.chip'); if (!b) return; S.proSel.has(b.dataset.id) ? S.proSel.delete(b.dataset.id) : S.proSel.add(b.dataset.id); drawProspects();
+});
+
+/* ================= ADD PROSPECT ================= */
+/* Search existing HubSpot contacts and make one a prospect. The server decides what is blocked or needs a confirm. */
+const AP = { results: [], sources: [], writeEnabled: true, sel: null, source: '', warnings: null, err: '', busy: false, timer: null, seq: 0 };
+const BUYER_ONLY_MSG = 'This contact is only in buyer campaign sequences (S1, S2 or S3), not in a BD sequence. You can still add them as a prospect.';
+const AP_TAG = { opted_out: 'Opted out', closed_won: 'Client', open_deal: 'Open deal', previous_prospect: 'Previous prospect', in_sequence: 'In sequence' };
+function apMsg(text, err) { $('apMsg').textContent = text || ''; $('apMsg').className = 'ap-msg' + (err ? ' err' : ''); }
+function apError(status, body) {
+  if (status === 401) return 'The dashboard password was not accepted. It may have changed: log out and sign in again.';
+  if (status === 429) return 'Too many wrong passwords from this computer. Wait 15 minutes and try again.';
+  if (body && body.message) return body.message;
+  if (status === 400) return 'Type between 2 and 100 characters.';
+  return 'Server error ' + status + '. Nothing was changed.';
+}
+function apOpen() {
+  Object.assign(AP, { results: [], sel: null, source: '', warnings: null, err: '', busy: false });
+  $('apQ').value = ''; apMsg(''); apDraw();
+  $('apBg').classList.add('on'); $('apQ').focus();
+}
+function apClose() { $('apBg').classList.remove('on'); clearTimeout(AP.timer); AP.seq++; }
+async function apSearch() {
+  const q = $('apQ').value.trim();
+  Object.assign(AP, { sel: null, warnings: null, err: '' });
+  if (q.length < 2) { AP.results = []; apMsg(q ? 'Type at least 2 characters.' : ''); return apDraw(); }
+  const my = ++AP.seq; apMsg('Searching...');
+  try {
+    const { status, body } = await API.searchContacts(q);
+    if (my !== AP.seq) return;   /* a newer search has started */
+    if (status !== 200) { AP.results = []; apMsg(apError(status, body), true); return apDraw(); }
+    AP.results = body.results || []; AP.sources = body.sources || []; AP.writeEnabled = body.writeEnabled !== false;
+    apMsg(!AP.results.length ? 'No HubSpot contacts match.' : AP.results.length >= 10 ? 'Showing the first 10. Type more to narrow it down.' : '');
+  } catch (e) { if (my !== AP.seq) return; AP.results = []; apMsg(e.message, true); }
+  apDraw();
+}
+function apDraw() {
+  $('apList').innerHTML = AP.results.map(c => {
+    const st = STATUS[c.status];
+    const tags = [c.blocked && `<span class="tag block">${esc(AP_TAG[c.blocked.reason] || c.blocked.reason)}</span>`,
+      c.buyerCampaignOnly && '<span class="tag warn">Buyer campaigns only</span>',
+      ...(c.warnings || []).map(w => `<span class="tag warn">${esc(AP_TAG[w.reason] || w.reason)}</span>`)].filter(Boolean).join('');
+    const sub = [c.company, c.email].filter(Boolean).join(' · ');
+    return `<button class="ap-row${AP.sel === c ? ' on' : ''}" data-id="${esc(c.hubspotId)}">
+      <div class="who"><span class="av">${esc(initials(c.company || c.name))}</span><div style="min-width:0"><div class="nm">${esc(c.name || '(no name)')}</div><div class="sub">${esc(sub)}</div></div></div>
+      <div class="ap-tags"><span class="pill ${st ? st.pill : 'p-un'}">${esc(c.statusLabel || 'No status')}</span>${tags}</div>
+    </button>`;
+  }).join('');
+  apDrawPick();
+}
+function apDrawPick() {
+  const c = AP.sel;
+  if (!c) { $('apPick').innerHTML = ''; return; }
+  const head = `<div><b>${esc(c.name || '(no name)')}</b>${c.company ? ', ' + esc(c.company) : ''}${c.title ? ` <span class="muted">${esc(c.title)}</span>` : ''}</div>`;
+  const dealLink = id => `<a class="hs" target="_blank" rel="noopener" href="https://app.hubspot.com/contacts/${CONFIG.hubspotPortalId}/record/0-3/${encodeURIComponent(id)}" title="Open deal in HubSpot">HS</a>`;
+  if (c.blocked) {
+    $('apPick').innerHTML = `<div class="ap-pick">${head}<div class="ap-msg err">${esc(c.blocked.message)}</div>${c.openDealId ? `<div class="row">Existing deal: ${dealLink(c.openDealId)}</div>` : ''}</div>`;
+    return;
+  }
+  const off = !AP.writeEnabled;
+  const opts = `<option value="">Choose a source</option>` + AP.sources.map(s => `<option value="${esc(s.value)}"${s.value === AP.source ? ' selected' : ''}>${esc(s.label)}</option>`).join('');
+  let action;
+  if (AP.warnings) {
+    action = `<div class="ap-warn">${AP.warnings.map(w => `<div>${esc(w.message)}</div>`).join('')}</div>
+      <div class="row"><button class="btn btn-go" data-act="ap-go" data-confirm="1"${AP.busy ? ' disabled' : ''}>Continue anyway</button><button class="btn" data-act="ap-cancel"${AP.busy ? ' disabled' : ''}>Cancel</button></div>`;
+  } else {
+    action = `<div class="row"><select id="apSource" aria-label="Deal source"${off || AP.busy ? ' disabled' : ''}>${opts}</select>
+      <button class="btn btn-go" data-act="ap-go"${off || AP.busy ? ' disabled' : ''}>${AP.busy ? 'Adding...' : 'Add as prospect'}</button></div>`;
+  }
+  $('apPick').innerHTML = `<div class="ap-pick">${head}${action}
+    ${off ? '<div class="ap-msg">Adding prospects is switched off on the server for now.</div>' : ''}
+    ${AP.err ? `<div class="ap-msg err">${esc(AP.err)}</div>` : ''}
+    <div class="muted">Creates a deal at Prospect in the BD pipeline and sets the contact to Prospect.</div></div>`;
+}
+async function apAdd(confirm) {
+  const c = AP.sel; if (!c || AP.busy) return;
+  if ($('apSource')) AP.source = $('apSource').value;
+  if (!AP.source) { AP.err = 'Choose a source first.'; return apDrawPick(); }
+  /* The server does not refuse a buyer-campaign-only contact: the page asks first, with the same Continue anyway step. */
+  if (c.buyerCampaignOnly && confirm !== true && !AP.warnings) { AP.warnings = [{ reason: 'buyer_campaign_only', message: BUYER_ONLY_MSG }, ...(c.warnings || [])]; return apDrawPick(); }
+  AP.busy = true; AP.err = ''; apDrawPick();
+  try {
+    const { status, body } = await API.addProspect(c.hubspotId, AP.source, confirm);
+    if (status === 200) {
+      apClose();
+      toast(body.alreadyProspect ? 'Already a prospect. Nothing was changed.'
+        : 'Prospect added: deal created in the BD pipeline.' + (body.stillInSequence ? ' Still in a Salesforge sequence: stop it there.' : ''));
+      S.proSel = new Set(presetStages('active'));
+      await refreshProspectsUntil(body.dealId);
+      reloadReplies().catch(() => {});   /* the Leads table shows the new status */
+      return;
+    }
+    if (status === 409 && body.error === 'confirm_required') AP.warnings = [...(c.buyerCampaignOnly ? [{ reason: 'buyer_campaign_only', message: BUYER_ONLY_MSG }] : []), ...(body.warnings || [])];
+    else {
+      AP.err = apError(status, body); AP.warnings = null;
+      if (status === 409 && body.error && AP_TAG[body.error]) { c.blocked = { reason: body.error, message: body.message || AP.err }; if (body.dealId) c.openDealId = body.dealId; AP.err = ''; }
+    }
+  } catch (e) { AP.err = e.message; }
+  AP.busy = false; apDraw();
+}
+$('addProBtn').addEventListener('click', apOpen);
+$('apClose').addEventListener('click', apClose);
+$('apBg').addEventListener('click', e => { if (e.target === $('apBg')) apClose(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('apBg').classList.contains('on')) apClose(); });
+$('apQ').addEventListener('input', () => { clearTimeout(AP.timer); AP.timer = setTimeout(apSearch, 350); });
+$('apList').addEventListener('click', e => {
+  const b = e.target.closest('.ap-row'); if (!b || AP.busy) return;
+  AP.sel = AP.results.find(c => c.hubspotId === b.dataset.id) || null; AP.warnings = null; AP.err = '';
+  apDraw();
+});
+$('apPick').addEventListener('change', e => { if (e.target.id === 'apSource') { AP.source = e.target.value; if (AP.err) { AP.err = ''; apDrawPick(); } } });
+$('apPick').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.act === 'ap-go') apAdd(b.dataset.confirm === '1');
+  if (b.dataset.act === 'ap-cancel') { AP.warnings = null; apDrawPick(); }
+});
+
+/* ================= LEADS GENERATED ================= */
+const LEAD_PRESETS = [['all', 'All'], ['open', 'Open'], ['converted', 'Became prospects'], ['out', 'Qualified out']];
+const LEAD_ORDER = ['unlabeled', 'interested', 'not_now', 'prospect', 'client', 'previous_prospect', 'proposal_sent', 'went_cold', 'not_a_fit', 'wrong_contact', 'not_interested', 'opted_out', 'past_engagement'];
+const presetStatuses = p => LEAD_ORDER.filter(k => p === 'all' || STATUS[k].group === p);
+function leadFollowCell(r) {
+  if (groupOf(r) !== 'open' || !r.hubspotId) return '';
+  const id = esc(r.hubspotId);
+  if (S.pendingReconnect === r.hubspotId) return `<div class="fu"><input type="date" id="rc-${id}" value="${ymd(addDays(new Date(), 60))}" title="Reconnect date"><button class="btn btn-sm" data-act="rc-save" data-id="${id}">Set</button><button class="btn btn-sm" data-act="rc-cancel" data-id="${id}">Cancel</button></div>`;
+  if (r._addFu) return `<div class="fu"><input type="date" id="lfu-${id}" value="${ymd(addDays(new Date(), 7))}"><button class="btn btn-sm" data-act="lfu-save" data-id="${id}">Add</button></div>`;
+  if (r.nextTask) { const over = new Date(r.nextTask.dueAt) < new Date(); return `<div class="fu"><span class="${over ? 'over' : ''}" title="${esc(r.nextTask.subject)}">${over ? 'Overdue ' : ''}${fmtIso(r.nextTask.dueAt)}</span><button class="btn btn-sm" data-act="lfu-add" data-id="${id}" title="Add another follow-up">+</button></div>`; }
+  const noPlan = statusKey(r) !== 'not_now' && daysSince(r.repliedAt) > 7;
+  return `<div class="fu">${noPlan ? '<span class="noplan">No next step</span>' : ''}<button class="btn btn-sm" data-act="lfu-add" data-id="${id}">Add follow-up</button></div>`;
+}
+function leadRows() {
+  const q = $('fQ').value.trim().toLowerCase(), ch = $('fCh').value, seq = $('fSeq').value;
+  return S.tableReplies.filter(r => !isBuyer(r) && isLead(r)
+    && (ch === 'all' || r.channel === ch) && (seq === 'all' || (r.sequenceId || r.sequenceName) === seq)
+    && (!q || (r.name + ' ' + r.company).toLowerCase().includes(q)))
+    .sort((a, b) => b.repliedAt.localeCompare(a.repliedAt));
+}
+/* Date a deal entered its current stage. Falls back to the deal's creation date; null when neither is a real date. */
+function stageEntered(d) {
+  for (const v of [d.stageEnteredAt, d.createdAt]) { const t = v ? new Date(v).getTime() : NaN; if (t > Date.UTC(2000, 0, 1)) return v; }
+  return null;
+}
+function hasBdDeal(r) { return r.hasDeal === true || S.deals.some(d => d.contact && String(d.contact.hubspotId) === String(r.hubspotId)); }
+/* The six labels a person can set from the Leads table; only these can be set back to Unlabeled (the server enforces it). */
+const UNDOABLE = ['interested', 'not_now', 'not_a_fit', 'not_interested', 'went_cold', 'wrong_contact'];
+const CLOSING = ['not_a_fit', 'not_interested', 'went_cold', 'wrong_contact'];   /* these also close open [BD] tasks */
+const rowsOf = id => [...S.tableReplies, ...S.chartReplies].filter(r => r.hubspotId === id);
+const hsContactUrl = id => `https://app.hubspot.com/contacts/${CONFIG.hubspotPortalId}/record/0-1/${encodeURIComponent(id)}`;
+const TICK = '<svg class="tick" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>';
+/* One rich toast: kind dark | ok | amber | bad. parts: strings, or { b: 'bold text' }. */
+function uToast(kind, parts, { undo = null, link = null, ms = 6000 } = {}) {
+  const t = $('uToast'); clearInterval(t._i); clearTimeout(t._h); $('toast').style.display = 'none';
+  t.className = 'toast utoast on ' + kind; t.replaceChildren();
+  if (kind === 'ok') t.insertAdjacentHTML('beforeend', TICK);
+  const msg = document.createElement('span');
+  parts.forEach(p => { if (typeof p === 'string') msg.append(p); else { const b = document.createElement('strong'); b.textContent = p.b; msg.append(b); } });
+  t.append(msg);
+  if (link) { const a = document.createElement('a'); a.href = link.href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = link.text; t.append(a); }
+  const hide = () => { clearInterval(t._i); clearTimeout(t._h); t.className = 'toast utoast'; };
+  if (undo) {
+    const a = document.createElement('a'); a.href = '#'; a.textContent = 'Undo';
+    const n = document.createElement('span'); n.className = 'ut-n';
+    let left = Math.round(ms / 1000); n.textContent = left + ' s';
+    a.addEventListener('click', e => { e.preventDefault(); hide(); undo(); });
+    t._i = setInterval(() => { left--; if (left <= 0) hide(); else n.textContent = left + ' s'; }, 1000);
+    t.append(a, n);
+  }
+  t._h = setTimeout(hide, ms + 200);
+}
+const BLOCK_WHY = { active_conversation: 'another contact there is Interested', not_interested: 'another contact there is Not Interested', not_a_fit: 'another contact there is Not a Fit', not_now: 'another contact there is on Reconnect Later' };
+/* Set a labelled contact back to Unlabeled and say what happened. A normal recency pause (recently_contacted) is not worth a mention: that is success. */
+async function doUnlabel(id, expected) {
+  const rows = rowsOf(id), row = rows[0] || {}, name = row.name || 'This contact', company = row.company || 'The company';
+  const label = STATUS[expected] ? STATUS[expected].label : expected;
+  let res;
+  try { res = await API.unlabel(id, expected); }
+  catch (err) { uToast('bad', ['Not undone. ' + err.message]); drawLeads(); return; }
+  const { status, body } = res;
+  if (status === 200 && body && body.ok) {
+    const tasks = body.tasks || {}, co = body.company || {};
+    rows.forEach(r => { r.status = 'replied_unclassified'; r.wasLead = true; if (tasks.reconnectClosed > 0) r.nextTask = null; r._flag = ''; });
+    const parts = [name + ' is Unlabeled again.'];
+    let kind = 'ok', link = null;
+    if (tasks.reconnectClosed > 0) parts.push(' The [BD] Reconnect task it created was closed.');
+    else if (co.stillBlockedReason && BLOCK_WHY[co.stillBlockedReason]) { kind = 'amber'; parts.push(` ${company} stays blocked: ${BLOCK_WHY[co.stillBlockedReason]}.`); }
+    else if (co.blockLifted) parts.push(` ${company}'s block was lifted.`);
+    if (tasks.closedByLabel > 0) {
+      parts.push(` ${tasks.closedByLabel} [BD] ${tasks.closedByLabel === 1 ? 'task' : 'tasks'} closed by ${label} ${tasks.closedByLabel === 1 ? 'stays' : 'stay'} closed.`);
+      link = { href: hsContactUrl(id), text: 'Open in HubSpot' };
+    }
+    uToast(kind, parts, { link, ms: 8000 });
+  } else if (status === 409) {
+    uToast('bad', ['Not undone. ' + name + ' was changed in HubSpot after this page loaded. The row was reloaded.'], { ms: 8000 });
+    try { await loadTable(); S.tableReplies.filter(r => r.hubspotId === id).forEach(r => { r._flag = 'Changed in HubSpot since this page loaded. Row reloaded. Your change was not saved.'; }); } catch (e) { /* the next refresh shows it */ }
+  } else {
+    uToast('bad', ['Not undone. ' + ((body && body.message) || (status === 404 ? 'No HubSpot contact with that ID.' : 'Server error ' + status))], { ms: 8000 });
+  }
+  drawFunnel(); drawDay(); drawLeads();
+}
+/* The confirm shown when "Unlabeled (undo label)" is picked from the dropdown. */
+const UL = { id: null, expected: null };
+function ulOpen(id) {
+  const r = rowsOf(id)[0]; if (!r) return drawLeads();
+  const k = statusKey(r), company = r.company || 'this company';
+  UL.id = id; UL.expected = r.status;
+  $('ulTitle').textContent = 'Set ' + r.name + ' back to Unlabeled?';
+  const lines = [];
+  if (k === 'interested') lines.push('Interested also blocked ' + company + ' from outreach. That block will be lifted.');
+  else if (k === 'not_interested' || k === 'not_a_fit') lines.push('This label blocked ' + company + ' for a year. That block will be lifted.');
+  else if (k === 'not_now' || k === 'went_cold') lines.push('This label paused ' + company + '. That pause will be lifted.');
+  if (CLOSING.includes(k)) lines.push('Tasks it closed stay closed.');
+  $('ulText').textContent = lines.join(' ');
+  $('ulGo').disabled = false;
+  $('ulBg').classList.add('on'); $('ulGo').focus();
+}
+function ulClose(redraw) { $('ulBg').classList.remove('on'); UL.id = null; if (redraw) drawLeads(); }
+$('ulCancel').addEventListener('click', () => ulClose(true));
+$('ulBg').addEventListener('click', e => { if (e.target === $('ulBg')) ulClose(true); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('ulBg').classList.contains('on')) ulClose(true); });
+$('ulGo').addEventListener('click', async () => {
+  const id = UL.id, expected = UL.expected; if (!id) return;
+  $('ulGo').disabled = true; ulClose(false);
+  await doUnlabel(id, expected);
+});
+
+function statusCell(r) {
+  const k = statusKey(r), st = STATUS[k];
+  if (st.group === 'converted') return `<span class="pill ${st.pill}">${st.label}${k === 'prospect' ? (hasBdDeal(r) ? ' (in pipeline)' : ' (no deal yet)') : ''}</span>`;
+  if (!r.hubspotId) return '<span class="muted">Not in HubSpot</span>';
+  if (k === 'opted_out') return `<span class="pill ${st.pill}">${st.label}</span>`;
+  /* Options come from the server. Statuses the server does not mark selectable are not offered; a record already holding one shows it greyed out. */
+  const opts = (S.contactOpts || []).filter(o => o.selectable && o.value !== 'prospect');
+  const head = opts.some(o => o.value === k) ? '' : `<option value="" selected disabled>${st.label}</option>`;
+  const off = S.contactOpts ? '' : ' disabled title="Status options could not be loaded from HubSpot. Press Refresh."';
+  /* One of the six labels and no BD deal: the first option undoes the label (the server refuses anything else). */
+  const undo = UNDOABLE.includes(k) && !hasBdDeal(r) ? '<option value="__unlabel">Unlabeled (undo label)</option><option disabled>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500</option>' : '';
+  return `<select data-id="${esc(r.hubspotId)}" aria-label="Status for ${esc(r.name)}"${off}>${undo}${head}${opts.map(o => `<option value="${esc(o.value)}"${o.value === k ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}<optgroup label="Pipeline"><option value="prospect">Make prospect ›</option></optgroup></select>`;
+}
+function drawLeads() {
+  if (!S.leadSel) S.leadSel = new Set(presetStatuses('all'));
+  const all = leadRows(), counts = {};
+  all.forEach(r => { const k = statusKey(r); counts[k] = (counts[k] || 0) + 1; });
+  $('leadChips').innerHTML = presetsHtml(LEAD_PRESETS) + LEAD_ORDER.filter(k => counts[k] || S.leadSel.has(k) && ['unlabeled', 'interested', 'not_now', 'prospect'].includes(k))
+    .map(k => `<button class="chip${S.leadSel.has(k) ? ' on' : ''}" data-k="${k}">${STATUS[k].label}<span class="c">${counts[k] || 0}</span></button>`).join('');
+  $('leadTitle').textContent = `Leads generated ${all.length}`;
+  const rows = all.filter(r => S.leadSel.has(statusKey(r)));
+  $('leadBody').innerHTML = rows.length ? rows.map(r => {
+    const days = daysSince(r.repliedAt), g = groupOf(r), cls = days <= 7 ? 'g' : days <= 21 ? 'a' : 'r';
+    return `<tr class="${g === 'out' ? 'dim' : ''}">
+      <td>${fmtIso(r.repliedAt)}</td>
+      <td><div class="who"><span class="av">${esc(initials(r.name))}</span><div style="min-width:0"><div>${esc(r.name)}</div><div class="sub">${esc(r.company)}</div>${r._flag ? `<div class="bv-flag">${esc(r._flag)}</div>` : ''}</div></div></td>
+      <td title="${esc(r.sequenceName)}">${esc(r.sequenceName)}</td>
+      <td><span style="display:inline-flex;align-items:center;gap:6px"><span class="dot" style="background:${dotColor(r)}"></span>${r.channel === 'linkedin' ? 'LinkedIn' : 'Email'}</span></td>
+      <td>${g === 'open' ? `<span class="days ${cls}">${days}d</span>` : ''}</td>
+      <td>${statusCell(r)}</td>
+      <td>${leadFollowCell(r)}</td>
+      <td><span class="hsbox">${chatIcon(r)}${r.hubspotId ? `<a class="hs" target="_blank" rel="noopener" href="https://app.hubspot.com/contacts/${CONFIG.hubspotPortalId}/record/0-1/${encodeURIComponent(r.hubspotId)}" title="Open contact in HubSpot">HS</a>` : ''}</span></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" class="empty">No leads match these filters.</td></tr>';
+}
+$('leadBody').addEventListener('change', async e => {
+  const sel = e.target; if (sel.tagName !== 'SELECT') return;
+  const id = sel.dataset.id, next = sel.value;
+  if (next === '__unlabel') { ulOpen(id); return; }
+  if (next === 'not_now') { S.pendingReconnect = id; drawLeads(); return; }
+  await saveLeadStatus(id, next, null, sel);
+});
+/* HubSpot search takes a few seconds to see a brand-new deal, so re-fetch until it shows up (about 20 seconds max). */
+async function refreshProspectsUntil(dealId) {
+  for (const wait of [0, 3000, 5000, 12000]) {
+    if (wait) await new Promise(r => setTimeout(r, wait));
+    try { S.deals = await API.prospects(); } catch (e) { continue; }
+    drawProspects(); drawLeads();
+    if (S.deals.some(d => String(d.dealId) === String(dealId))) return;
+  }
+}
+async function saveLeadStatus(id, next, reconnectAt, sel) {
+  if (next === 'prospect' && !confirm('Make this lead a prospect? This creates a deal in the BD pipeline in HubSpot.')) { drawLeads(); return; }
+  if (sel) { sel.classList.add('saving'); sel.disabled = true; }
+  try {
+    const res = await API.setStatus(id, next, reconnectAt);
+    [...S.tableReplies, ...S.chartReplies].filter(r => r.hubspotId === id).forEach(r => { r.status = next; if (STATUS[next] && STATUS[next].group !== 'out') r.wasLead = true; if (res && 'nextTask' in res) r.nextTask = res.nextTask; });
+    S.pendingReconnect = null;
+    if (UNDOABLE.includes(next)) { const who = rowsOf(id)[0]; uToast('dark', [who ? who.name : 'Contact', ' marked ', { b: STATUS[next].label }], { undo: () => doUnlabel(id, next), ms: 10000 }); }
+    else toast(next === 'prospect' ? 'Deal created in the BD pipeline' : 'Saved to HubSpot: ' + (STATUS[next] ? STATUS[next].label : next));
+    if (res && res.dealId) { S.proSel = new Set(presetStages('active')); await refreshProspectsUntil(res.dealId); }
+  } catch (err) { toast('Could not save. ' + err.message, true); }
+  drawFunnel(); drawDay(); drawLeads();
+}
+$('leadBody').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const id = b.dataset.id, rows = [...S.tableReplies, ...S.chartReplies].filter(r => r.hubspotId === id);
+  if (b.dataset.act === 'rc-cancel') { S.pendingReconnect = null; drawLeads(); }
+  if (b.dataset.act === 'rc-save') { const v = $('rc-' + id).value; if (!v) return toast('Pick a reconnect date.', true); await saveLeadStatus(id, 'not_now', v, null); }
+  if (b.dataset.act === 'lfu-add') { rows.forEach(r => r._addFu = true); drawLeads(); }
+  if (b.dataset.act === 'lfu-save') {
+    const v = $('lfu-' + id).value; if (!v) return toast('Pick a date.', true);
+    try { const t = await API.leadFollowup(id, v); rows.forEach(r => { r.nextTask = t; r._addFu = false; }); toast('Follow-up task added to the BD Tasks queue'); } catch (err) { toast('Could not save. ' + err.message, true); }
+    drawLeads();
+  }
+});
+$('leadChips').addEventListener('click', e => {
+  const p = e.target.closest('.preset'); if (p) { S.leadSel = new Set(presetStatuses(p.dataset.p)); return drawLeads(); }
+  const b = e.target.closest('.chip'); if (!b) return; S.leadSel.has(b.dataset.k) ? S.leadSel.delete(b.dataset.k) : S.leadSel.add(b.dataset.k); drawLeads();
+});
+function fillSeqFilter() {
+  const seqs = new Map(); bdRows(S.tableReplies).forEach(r => r.sequenceName && seqs.set(r.sequenceId || r.sequenceName, r.sequenceName));
+  const cur = $('fSeq').value || 'all';
+  $('fSeq').innerHTML = '<option value="all">All sequences</option>' + [...seqs.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([id, n]) => `<option value="${esc(id)}">${esc(n)}</option>`).join('');
+  $('fSeq').value = [...$('fSeq').options].some(o => o.value === cur) ? cur : 'all';
+}
+function exportCSV() {
+  const rows = leadRows().filter(r => S.leadSel.has(statusKey(r)));
+  const head = ['Replied', 'Name', 'Company', 'Sequence', 'Channel', 'Status'];
+  const body = rows.map(r => [localDay(r.repliedAt), r.name, r.company, r.sequenceName, r.channel, labelOf(statusKey(r))]);
+  const csv = [head, ...body].map(x => x.map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')).join('\n');
+  const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv); a.download = 'rwt_leads_' + ymd(new Date()) + '.csv'; a.click();
+}
+
+/* ================= BUYERS ================= */
+/* One tab to run each sell-side mandate (slots S1, S2, S3). A slot's list is the companies with someone enrolled in that slot's
+   Salesforge sequences (the server builds it; until Salesforge has loaded it answers 503 and no list is shown).
+   Every dropdown option and every label comes from GET /dashboard/options;
+   the page only keeps the fixed display order of the chips and summary lines (below). Edits save straight to HubSpot through the server, which refuses a change when
+   HubSpot no longer holds the value this page loaded (409): the row then reloads and nothing is overwritten. */
+const BV_PAGE = 100, BV_BULK_MAX = 100;
+const BV = { opened: false, slot: 'S1', opts: null, writeEnabled: false, writeKnown: false,
+  names: {}, persisted: true, note: '', lists: { S1: null, S2: null, S3: null },
+  q: '', sel: {}, shown: BV_PAGE, checked: new Set(), saving: new Set(),
+  editing: null, draft: '', renameErr: '', renameBusy: false, bulkStatus: '', bulkBusy: false, tick: null,
+  retry: {}, retryMs: 10000 };   /* retry: slot -> timer while the server says it is still loading Salesforge */
+/* The server shows a blank slot status (nothing sent yet) as Not Contacted and says so with statusBlank; the page keeps that display. */
+const BV_BLANK_SHOWS = 'not_contacted';
+const CHANNEL = { email: 'Email', linkedin: 'LinkedIn', both: 'Email and LinkedIn' };
+/* Fixed display order. The names always come from the options route; these lists only say which comes first, and which
+   statuses are on by default ("active"). A status HubSpot adds later is listed after these, off by default. */
+const BV_ACTIVE = ['replied', 'teaser_sent_awaiting_reply', 'in_process'];
+const BV_CHIP_ORDER = [...BV_ACTIVE, 'contacted_no_reply', 'not_contacted', 'went_quiet', 'soft_pass_retry', 'passed_do_not_retry', 'exclude'];
+const BV_SUMMARY_ORDER = [...BV_ACTIVE, 'went_quiet', 'soft_pass_retry', 'passed_do_not_retry', 'contacted_no_reply'];
+/* Status colour by HubSpot internal value (Buyers tab only). Any teaser_sent* value is green; blank counts as not_contacted; unknown = neutral. */
+const BV_STATUS_TONE = {
+  replied: 'green', teaser_sent_awaiting_reply: 'green', in_process: 'green',
+  contacted_no_reply: 'grey', not_contacted: 'grey',
+  went_quiet: 'amber', soft_pass_retry: 'amber',
+  passed_do_not_retry: 'red', exclude: 'dark'
+};
+const bvTone = v => !v ? 'grey' : BV_STATUS_TONE[v] || (String(v).startsWith('teaser_sent') ? 'green' : '');
+const BV_NOTE_MAX = 2000;
+const BV_TICK = '<svg class="bv-tick" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg>';
+const BV_STAGE_ORDER = ['teaser sent', 'nda', 'data room', 'eoi submitted', 'management meeting', 'loi'];   /* matched on HubSpot's label */
+const BV_IC = {
+  email: '<svg class="bv-ic" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>',
+  linkedin: '<svg class="bv-ic" aria-hidden="true" viewBox="0 0 24 24" fill="currentColor"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg>'
+};
+/* An envelope for email, the LinkedIn "in" mark for LinkedIn, both for both. */
+const bvChanIcons = (ch, withTitle = true) => CHANNEL[ch]
+  ? `<span class="bv-ch" role="img" aria-label="${CHANNEL[ch]}"${withTitle ? ` title="${CHANNEL[ch]}"` : ''}>${ch === 'both' ? BV_IC.email + BV_IC.linkedin : BV_IC[ch]}</span>` : '';
+const bvFullDate = iso => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+/* ---- server calls: all hand back { status, body } so the server's own wording can be shown ---- */
+async function bapi(path, opts) {
+  const r = await apiRaw(path, opts);
+  if (r.status === 401) { logout(); throw new Error('Session expired. Log in again.'); }
+  return r;
+}
+const bcall = (demo, path, opts) => S.mode === 'demo' ? demo() : bapi(path, opts);
+const jbody = (method, o) => ({ method, body: JSON.stringify(o) });
+const BAPI = {
+  options: () => bcall(() => DEMO_BV.options(), '/dashboard/options'),
+  mandates: () => bcall(() => DEMO_BV.mandates(), '/dashboard/mandates'),
+  setMandate: (slot, name) => bcall(() => DEMO_BV.setMandate(slot, name), `/dashboard/mandates/${encodeURIComponent(slot)}`, jbody('PATCH', { name })),
+  list: slot => bcall(() => DEMO_BV.list(slot), `/dashboard/buyers?slot=${encodeURIComponent(slot)}`),
+  update: (id, o) => bcall(() => DEMO_BV.update(id, o), `/dashboard/buyers/${encodeURIComponent(id)}`, jbody('PATCH', o)),
+  bulk: o => bcall(() => DEMO_BV.bulk(o), '/dashboard/buyers/bulk', jbody('POST', o)),
+  search: q => bcall(() => DEMO_BV.search(q), `/dashboard/companies/search?q=${encodeURIComponent(q)}`),
+  add: o => bcall(() => DEMO_BV.add(o), '/dashboard/buyers', jbody('POST', o)),
+  addNote: (id, o) => bcall(() => DEMO_BV.addNote(id, o), `/dashboard/buyers/${encodeURIComponent(id)}/notes`, jbody('POST', o))
+};
+const BV_ERR = {
+  buyers_write_disabled: 'Edits are switched off on the server.',
+  bad_status: 'HubSpot does not list that status for this slot.', bad_furthest: 'HubSpot does not list that furthest stage for this slot.',
+  bad_notes: 'Notes can be up to 5000 characters.', bad_name: 'Use up to 60 characters, with no line breaks or special characters.',
+  not_saved: 'The server could not save the name. Try again.', not_found: 'HubSpot has no company with that ID.',
+  bad_text: 'Notes must be 1 to 2000 characters, with no special characters.', note_failed: 'HubSpot did not accept the note.',
+  notes_field_full: 'The notes field is full. Trim it in HubSpot, then try again.',
+  bad_query: 'Type between 2 and 100 characters.', bad_items: 'Select between 1 and 100 companies.', bad_slot: 'Unknown slot.'
+};
+function bvError(status, body) {
+  if (status === 401) return 'The dashboard password was not accepted. It may have changed: log out and sign in again.';
+  if (status === 429) return 'Too many wrong passwords from this computer. Wait 15 minutes and try again.';
+  if (body && body.message) return body.message;
+  return BV_ERR[body && body.error] || 'Server error ' + status + '. Nothing was changed.';
+}
+
+/* ---- options (also feeds the contact status labels and the Leads dropdown) ---- */
+function applyContactLabels() {
+  (S.contactOpts || []).forEach(o => {
+    if (STATUS[o.value]) STATUS[o.value].label = o.label;
+    else if (o.selectable) {   /* a status added in HubSpot after this page was written: offered, grouped as an open lead */
+      STATUS[o.value] = { label: o.label, group: 'open', pill: 'p-un' };
+      LEAD_ORDER.push(o.value); TALLY_ORDER.push(o.value);
+    }
+  });
+}
+async function loadOptions() {
+  try {
+    const { status, body } = await BAPI.options();
+    if (status !== 200) return;
+    BV.opts = body; BV.writeEnabled = body.writeEnabled === true; BV.writeKnown = true;
+    S.contactOpts = body.contactStatus || null; applyContactLabels();
+  } catch { /* the Outreach tab keeps working; dropdowns that need options stay switched off */ }
+}
+
+/* ---- helpers ---- */
+const bvCodes = () => Object.keys(BV.lists);
+const bvOpts = (code = BV.slot) => (BV.opts && BV.opts.slots && BV.opts.slots[code]) || { status: [], furthest: [] };
+const bvLabel = (list, v) => { const o = (list || []).find(x => x.value === v); return o ? o.label : v; };
+const bvNameOf = code => (BV.names[code] || '').trim();
+const bvList = () => BV.lists[BV.slot];
+const bvNorm = x => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+/** The list in the given order (by key); anything not named keeps HubSpot's order after the named ones. */
+function bvOrdered(list, order, key = o => o.value) {
+  const at = o => { const i = order.indexOf(key(o)); return i < 0 ? order.length : i; };
+  return list.map((o, n) => ({ o, n })).sort((a, b) => at(a.o) - at(b.o) || a.n - b.n).map(x => x.o);
+}
+/** The chips that are on for a slot. Default: the active statuses. '*' means Show all (also covers values the options do not list). */
+const bvSel = code => BV.sel[code] || (BV.sel[code] = new Set(BV_ACTIVE));
+const bvShownByChips = (sel, b) => sel.has('*') || sel.has(b.status);
+const bvMatchesQ = (b, q) => !q || (b.name + ' ' + (b.contact ? b.contact.name + ' ' + b.contact.email : '')).toLowerCase().includes(q);
+/** Computed from every row loaded for the slot, whatever the chips say. */
+function bvSlotSummary(code) {
+  const L = BV.lists[code]; if (!L || L.state !== 'ready') return null;
+  const o = bvOpts(code), byStatus = {}, byStage = {};
+  L.buyers.forEach(b => { byStatus[b.status] = (byStatus[b.status] || 0) + 1; if (b.furthest) byStage[b.furthest] = (byStage[b.furthest] || 0) + 1; });
+  const statuses = bvOrdered(o.status, BV_SUMMARY_ORDER).filter(x => BV_SUMMARY_ORDER.includes(x.value) || !BV_CHIP_ORDER.includes(x.value))
+    .map(x => ({ value: x.value, label: x.label, n: byStatus[x.value] || 0 })).filter(x => x.n);
+  const stages = bvOrdered(o.furthest, BV_STAGE_ORDER, x => bvNorm(x.label)).map(x => ({ label: x.label, n: byStage[x.value] || 0 })).filter(x => x.n);
+  return { total: L.buyers.length, active: L.buyers.filter(b => BV_ACTIVE.includes(b.status)).length, statuses, stages };
+}
+/** The rows the table shows: the chips and the search box. A row edited on this page stays (b._pin) until the next reload. */
+function bvFiltered() {
+  const L = bvList(); if (!L || L.state !== 'ready') return [];
+  const q = BV.q.trim().toLowerCase(), sel = bvSel(BV.slot);
+  return L.buyers.filter(b => (bvShownByChips(sel, b) || b._pin) && bvMatchesQ(b, q));
+}
+/** Bulk and select-all act only on rows that are shown: drop any ticked row a new filter hid. */
+function bvPrune() { const vis = new Set(bvFiltered().map(b => b.companyId)); [...BV.checked].forEach(id => { if (!vis.has(id)) BV.checked.delete(id); }); }
+
+/* ---- loading ---- */
+function bvTicker() {
+  const loading = Object.values(BV.lists).some(L => L && L.state === 'loading');
+  if (loading && !BV.tick) BV.tick = setInterval(() => {
+    const L = bvList(), el = $('bvElapsed');
+    if (el && L && L.state === 'loading') el.textContent = Math.round((performance.now() - L.t0) / 1000) + ' s';
+  }, 500);
+  if (!loading && BV.tick) { clearInterval(BV.tick); BV.tick = null; }
+}
+async function bvLoadSlot(code, retry = false) {
+  clearTimeout(BV.retry[code]);
+  const prior = BV.lists[code];
+  const waiting = retry && prior && prior.state === 'sfloading';   /* a retry while Salesforge loads: the message stays on screen */
+  const L = BV.lists[code] = waiting ? { ...prior, t0: performance.now(), tries: prior.tries + 1 }
+    : { state: 'loading', buyers: [], t0: performance.now(), ms: null, touchesReady: true, err: '', tries: 0, builtAt: null, gaps: null };
+  if (!waiting) { bvTicker(); bvDrawAll(); }
+  try {
+    const { status, body } = await BAPI.list(code);
+    if (BV.lists[code] !== L) return;   /* a newer load replaced this one */
+    if (status === 200) {
+      L.buyers = body.buyers || []; L.touchesReady = body.touchesReady !== false; L.state = 'ready';
+      L.builtAt = body.salesforgeBuiltAt || null;
+      L.gaps = { noEmail: body.noEmailLeads || 0, unmatched: body.unmatchedEmails || 0, noCompany: body.noCompanyEmails || 0 };
+      if (typeof body.writeEnabled === 'boolean') { BV.writeEnabled = body.writeEnabled; BV.writeKnown = true; }
+      if (!(code in BV.names) && typeof body.mandateName === 'string') BV.names[code] = body.mandateName;
+    } else if (status === 503 && body && body.error === 'salesforge_loading') {
+      L.state = 'sfloading'; L.err = body.message || '';   /* never a list while Salesforge loads; ask again */
+      BV.retry[code] = setTimeout(() => { if (BV.lists[code] === L) bvLoadSlot(code, true); }, BV.retryMs);
+    } else if (status === 503 && body && body.error === 'salesforge_not_configured') {
+      L.state = 'sfoff'; L.err = bvError(status, body);    /* the server's own message; no retry */
+    } else { L.state = 'error'; L.err = bvError(status, body); }
+  } catch (e) { if (BV.lists[code] !== L) return; L.state = 'error'; L.err = e.message; }
+  L.ms = performance.now() - L.t0;
+  bvTicker(); bvDrawAll();
+}
+async function bvLoadNames() {
+  try {
+    const { status, body } = await BAPI.mandates();
+    if (status === 200) { BV.names = body.names || {}; BV.persisted = body.persisted !== false; BV.note = body.note || ''; }
+  } catch { /* names stay as they were */ }
+  bvDrawCards(); bvDrawHead();
+}
+/* Opening the tab the first time loads the names, the options and all three slots side by side. Later opens keep what is there; Refresh reloads. */
+async function bvOpen() {
+  if (BV.opened) return bvDrawAll();
+  BV.opened = true; bvDrawAll(); bvLoadAll();
+}
+function bvLoadAll() {
+  BV.checked.clear();
+  bvLoadNames(); loadOptions().then(bvDrawAll);
+  bvCodes().forEach(bvLoadSlot);
+}
+
+/* ---- drawing ---- */
+const BV_PENCIL = '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+function bvDrawCards() {
+  $('bvCards').innerHTML = bvCodes().map(c => {
+    const L = BV.lists[c], name = bvNameOf(c), sm = bvSlotSummary(c);
+    const total = sm ? sm.active + ' active of ' + sm.total : '';
+    const sum = !sm ? `<div class="bv-sum muted">${({ error: 'Could not load', sfloading: 'Loading Salesforge...', sfoff: 'Salesforge not connected' })[L && L.state] || 'Loading...'}</div>`
+      : `<div class="bv-sum">${sm.statuses.length
+          ? sm.statuses.map(x => `<button class="bv-count" data-act="sumfilter" data-slot="${c}" data-status="${esc(x.value)}" title="Show only ${esc(x.label)} in the table">${x.n} ${esc(x.label)}</button>`).join('<span class="muted"> · </span>')
+          : '<span class="muted">No buyers in these statuses</span>'}</div>
+        <div class="bv-sum bv-fu muted">Furthest: ${sm.stages.length ? sm.stages.map(x => x.n + ' ' + esc(x.label)).join(' · ') : 'none yet'}</div>`;
+    const body = BV.editing === c
+      ? `<div class="bv-edit"><input id="bvName" aria-label="Mandate name for ${c}" maxlength="60" value="${esc(BV.draft)}">
+          ${BV.renameErr ? `<div class="ap-msg err">${esc(BV.renameErr)}</div>` : ''}
+          <div class="row"><button class="btn btn-go" data-act="name-save" data-slot="${c}"${BV.renameBusy ? ' disabled' : ''}>${BV.renameBusy ? 'Saving...' : 'Save name'}</button>
+          <button class="btn" data-act="name-cancel"${BV.renameBusy ? ' disabled' : ''}>Cancel</button></div>
+          <div class="muted">Display name only. ${esc(BV.note || 'Sequences are matched to a slot by the S1, S2 or S3 prefix of their name.')}${BV.persisted ? '' : ' This server is not keeping names between restarts.'}</div></div>`
+      : `<button class="bv-pick" data-act="pick" data-slot="${c}" aria-pressed="${c === BV.slot}">
+          <b>${name ? esc(name) : '<span class="muted" style="font-weight:400">No mandate name yet</span>'}</b></button>${sum}`;
+    return `<div class="bv-card${c === BV.slot ? ' on' : ''}">
+      <div class="bv-top"><span class="bv-code">${c}</span>
+        <span style="display:flex;align-items:center;gap:6px"><span class="muted">${total}</span>
+        <button class="bv-icon" data-act="name-edit" data-slot="${c}" aria-label="Rename the ${c} mandate" title="Rename the ${c} mandate">${BV_PENCIL}</button></span></div>
+      ${body}</div>`;
+  }).join('');
+}
+function bvDrawHead() {
+  const L = bvList(), name = bvNameOf(BV.slot);
+  $('bvOff').hidden = BV.writeEnabled || !BV.writeKnown;
+  $('bvTitle').textContent = BV.slot + (name ? ' · ' + name : '');
+  let meta = '', asOf = '', gaps = '', gapsTitle = '';
+  if (L && L.state === 'ready') {
+    const n = bvFiltered().length;
+    meta = n + ' shown of ' + L.buyers.length + ' enrolled. Loaded in ' + (L.ms / 1000).toFixed(1) + ' s.'
+      + (L.touchesReady ? '' : ' Last touch dates are still loading on the server: press Refresh in a minute.');
+    if (L.builtAt) asOf = 'Salesforge data as of ' + new Date(L.builtAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const g = L.gaps || {}, bits = [], why = [];
+    if (g.noEmail > 0) { bits.push(g.noEmail + (g.noEmail === 1 ? ' LinkedIn-only lead' : ' LinkedIn-only leads')); why.push('LinkedIn-only leads: enrolled in this slot\'s Salesforge sequences but with no email address, so they cannot be matched to a HubSpot company yet.'); }
+    if (g.unmatched > 0) { bits.push(g.unmatched + (g.unmatched === 1 ? ' email with no HubSpot contact' : ' emails with no HubSpot contact')); why.push('Emails with no HubSpot contact: enrolled in Salesforge, but no contact with that email exists in HubSpot.'); }
+    if (g.noCompany > 0) { bits.push(g.noCompany + (g.noCompany === 1 ? ' contact with no company' : ' contacts with no company')); why.push('Contacts with no company: the HubSpot contact has no associated company, so there is nothing to list.'); }
+    if (bits.length) { gaps = 'Not listed: ' + bits.join(', ') + '.'; gapsTitle = why.join('\n'); }
+  }
+  $('bvMeta').textContent = meta;
+  $('bvAsOf').textContent = asOf;
+  $('bvGaps').textContent = gaps; $('bvGaps').title = gapsTitle;
+  $('bvSub').hidden = !asOf && !gaps;
+}
+/** Entries of the notes field, newest first: split on blank lines. Old content without blank lines is one entry. */
+const bvNoteEntries = t => String(t || '').split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+/** The notes cell: the latest entry in a grey box (read-only), Show all / Show less, and a one-line Add. */
+function bvNotesCell(b, dis) {
+  const ents = bvNoteEntries(b.notes), earlier = ents.length - 1;
+  let box = '';
+  if (ents.length) {
+    const long = ents[0].length > 110 || ents[0].includes('\n');
+    const link = b._exp ? 'Show less' : earlier > 0 ? `Show all (${earlier} earlier)` : long ? 'Show all' : '';
+    box = `<div class="bv-nbox${b._hl ? ' hl' : ''}"><div class="${b._exp ? 'bv-nfull' : 'bv-nlatest'}">${esc(b._exp ? String(b.notes).trim() : ents[0])}</div>`
+      + (link ? `<button type="button" class="bv-nlink" data-act="notes-toggle" aria-expanded="${b._exp ? 'true' : 'false'}">${link}</button>` : '') + '</div>';
+  }
+  const off = dis || b._lock ? ' disabled' : '';
+  return `<div class="bv-ncell">${box}<div class="bv-nadd"><input type="text" class="bv-ninput" maxlength="${BV_NOTE_MAX}" placeholder="Add a note" value="${esc(b._draft || '')}" aria-label="New note for ${esc(b.name)}"${off}>`
+    + `<button type="button" class="bv-nbtn" data-act="note-add"${off}>${BV.saving.has(b.companyId) && b._adding ? 'Adding…' : 'Add'}</button></div></div>`;
+}
+function bvRowHtml(b) {
+  const o = bvOpts(), L = bvList();
+  const busy = BV.saving.has(b.companyId), dis = !BV.writeEnabled || busy || !o.status.length ? ' disabled' : '';
+  const v = f => (b._pend && f in b._pend) ? b._pend[f] : b[f];
+  const grey = (cur, list) => cur && !list.some(x => x.value === cur) ? `<option value="${esc(cur)}" selected disabled>${esc(cur)}</option>` : '';
+  const stOpts = grey(v('status'), o.status) + o.status.map(x => `<option value="${esc(x.value)}"${x.value === v('status') ? ' selected' : ''}>${esc(x.label)}</option>`).join('');
+  const fuOpts = `<option value=""${v('furthest') === '' ? ' selected' : ''}>Not set</option>` + grey(v('furthest'), o.furthest)
+    + o.furthest.map(x => `<option value="${esc(x.value)}"${x.value === v('furthest') ? ' selected' : ''}>${esc(x.label)}</option>`).join('');
+  const sel = bvSel(BV.slot), hiddenAfter = b._pin && !bvShownByChips(sel, b);
+  const contact = b.contact ? `<div class="nm">${esc(b.contact.name || b.contact.email || '(no name)')}</div>${CHANNEL[b.channel] ? '' : '<div class="muted">No sends yet</div>'}` : '<span class="muted">No contact</span>';
+  const touch = b.lastTouchAt
+    ? `<span class="bv-lt" title="${esc((CHANNEL[b.channel] ? CHANNEL[b.channel] + ', last sent ' : 'Last sent ') + bvFullDate(b.lastTouchAt))}">${esc(fmtIso(b.lastTouchAt))} ${bvChanIcons(b.channel, false)}</span>`
+    : `<span class="muted">${L && L.touchesReady ? 'No touches' : 'Loading'}</span>`;
+  const hs = b.hubspotUrl && S.mode !== 'demo' ? `<a class="hs" target="_blank" rel="noopener" href="${esc(b.hubspotUrl)}" title="Open company in HubSpot">HS</a>` : '';
+  const id = esc(b.companyId);
+  return `<tr data-id="${id}" class="${BV.checked.has(b.companyId) ? 'sel' : ''}${busy ? ' saving' : ''}">
+    <td><input type="checkbox" data-act="chk" aria-label="Select ${esc(b.name)}"${BV.checked.has(b.companyId) ? ' checked' : ''}${BV.writeEnabled && !BV.bulkBusy ? '' : ' disabled'}></td>
+    <td><div class="nm">${esc(b.name || '(no name)')}</div>${b.domain ? `<div class="muted">${esc(b.domain)}</div>` : ''}${b._flag ? `<div class="bv-flag">${esc(b._flag)}</div>` : ''}${hiddenAfter ? '<div class="bv-flag">Hidden by filter after reload</div>' : ''}</td>
+    <td>${contact}</td>
+    <td><select data-f="status" data-tone="${bvTone(v('status'))}" aria-label="Slot status for ${esc(b.name)}"${dis}>${stOpts}</select></td>
+    <td><select data-f="furthest" aria-label="Furthest stage for ${esc(b.name)}"${dis}>${fuOpts}</select></td>
+    <td>${bvNotesCell(b, dis)}</td>
+    <td>${touch}</td>
+    <td>${hs}</td></tr>`;
+}
+function bvDrawRows() {
+  const L = bvList(), body = $('bvBody');
+  if (!L || L.state === 'loading') {
+    body.innerHTML = `<tr><td colspan="8"><div class="bv-load"><span class="bv-spin"></span>Loading ${BV.slot} buyers from HubSpot... <b id="bvElapsed">${L ? Math.round((performance.now() - L.t0) / 1000) : 0} s</b></div></td></tr>`;
+  } else if (L.state === 'sfloading') {
+    body.innerHTML = '<tr><td colspan="8"><div class="bv-load"><span class="bv-spin"></span>Still loading Salesforge. Checking again every ' + Math.round(BV.retryMs / 1000) + ' seconds.</div></td></tr>';
+  } else if (L.state === 'sfoff') {
+    body.innerHTML = `<tr><td colspan="8" class="empty">${esc(L.err)}</td></tr>`;
+  } else if (L.state === 'error') {
+    body.innerHTML = `<tr><td colspan="8" class="empty">Could not load ${BV.slot}: ${esc(L.err)} <button class="btn btn-sm" data-act="retry">Try again</button></td></tr>`;
+  } else {
+    const rows = bvFiltered();
+    body.innerHTML = rows.length
+      ? rows.slice(0, BV.shown).map(bvRowHtml).join('') + (rows.length > BV.shown ? `<tr><td colspan="8" class="empty"><button class="btn" data-act="more">Show ${Math.min(BV_PAGE, rows.length - BV.shown)} more (${rows.length - BV.shown} not shown)</button></td></tr>` : '')
+      : `<tr><td colspan="8" class="empty">${L.buyers.length ? 'No buyers match these filters (' + L.buyers.length + ' enrolled in ' + BV.slot + '). Try Show all.' : 'No companies are enrolled in a Salesforge sequence whose name starts with ' + BV.slot + ' yet.'}</td></tr>`;
+  }
+  bvSyncAll();
+}
+function bvSyncAll() {
+  const all = $('bvAll'), vis = bvFiltered();
+  all.checked = vis.length > 0 && vis.every(b => BV.checked.has(b.companyId));
+  all.disabled = !BV.writeEnabled || BV.bulkBusy || !vis.length;
+}
+function bvRedrawRow(b) {
+  const tr = $('bvBody').querySelector(`tr[data-id="${CSS.escape(b.companyId)}"]`);
+  if (tr) tr.outerHTML = bvRowHtml(b);
+}
+function bvDrawBar() {
+  const n = BV.checked.size, bar = $('bvBar');
+  bar.hidden = n === 0; if (!n) return;
+  const o = bvOpts(), off = !BV.writeEnabled || BV.bulkBusy;
+  bar.innerHTML = `<b>${n} selected</b><label class="muted" for="bvBulkSel">Set status for all</label>
+    <select id="bvBulkSel"${off ? ' disabled' : ''}><option value="">Choose a status</option>${o.status.map(x => `<option value="${esc(x.value)}"${x.value === BV.bulkStatus ? ' selected' : ''}>${esc(x.label)}</option>`).join('')}</select>
+    <button class="btn btn-go" data-act="bulk-go"${off || !BV.bulkStatus ? ' disabled' : ''}>${BV.bulkBusy ? 'Saving...' : 'Apply to ' + n}</button>
+    <button class="btn" data-act="bulk-clear"${BV.bulkBusy ? ' disabled' : ''}>Clear selection</button>
+    ${BV.writeEnabled ? '' : '<span class="muted">Edits are switched off on the server</span>'}`;
+}
+/** One chip per status HubSpot lists for the slot, in the fixed display order, each with its count (rows matching the search box). */
+function bvDrawChips() {
+  const L = bvList(), el = $('bvChips');
+  if (!L || L.state !== 'ready') { el.innerHTML = ''; return; }
+  const q = BV.q.trim().toLowerCase(), sel = bvSel(BV.slot), counts = {};
+  L.buyers.filter(b => bvMatchesQ(b, q)).forEach(b => { counts[b.status] = (counts[b.status] || 0) + 1; });
+  el.innerHTML = '<span class="presets">Show<button class="preset" data-p="active">Active only</button><button class="preset" data-p="all">Show all</button></span><span class="chipsep"></span>'
+    + bvOrdered(bvOpts().status, BV_CHIP_ORDER).map(o => `<button class="chip${sel.has('*') || sel.has(o.value) ? ' on' : ''}" data-k="${esc(o.value)}" aria-pressed="${sel.has('*') || sel.has(o.value)}">${bvTone(o.value) ? `<span class="bv-dot" data-tone="${bvTone(o.value)}" aria-hidden="true"></span>` : ''}${esc(o.label)}<span class="c">${counts[o.value] || 0}</span></button>`).join('');
+}
+function bvDrawAll() { bvDrawCards(); bvDrawHead(); bvDrawChips(); bvDrawBar(); bvDrawRows(); bvTicker(); }
+/** After the chips or the search box change: redraw what depends on them. */
+function bvRefilter() { BV.shown = BV_PAGE; bvPrune(); bvDrawChips(); bvDrawHead(); bvDrawBar(); bvDrawRows(); }
+
+/* ---- edit one field (status, furthest stage or notes) ---- */
+/* The page sends the value it loaded as `expected`. If HubSpot holds something else the server answers 409 with the
+   current values: the row is reloaded from them and the change is NOT made. */
+/** Apply the values HubSpot gave back. A blank slot status stays shown as Not Contacted and the row remembers it is blank. */
+function bvApply(b, v) {
+  b.statusBlank = !v.status; b.status = v.status || BV_BLANK_SHOWS;
+  b.furthest = v.furthest || ''; b.notes = v.notes || '';
+}
+async function bvSave(id, field, value) {
+  const code = BV.slot, L = BV.lists[code], b = L && L.buyers.find(x => x.companyId === id);
+  if (!b || b[field] === value || BV.saving.has(id)) return;
+  BV.saving.add(id); b._flag = ''; b._pend = { [field]: value }; bvRedrawRow(b);
+  try {
+    /* A blank status was loaded as blank: say so (expected status ''), whatever field is edited. */
+    const expected = { [field]: field === 'status' && b.statusBlank ? '' : b[field] };
+    if (b.statusBlank && field !== 'status') expected.status = '';
+    const { status, body } = await BAPI.update(id, { slot: code, changes: { [field]: value }, expected });
+    if (status === 200) { bvApply(b, body.values); b._pin = true; toast('Saved to HubSpot'); }
+    else if (status === 409) bvStale(code, b, body);
+    else toast('Not saved. ' + bvError(status, body), true);
+  } catch (e) { toast('Not saved. ' + e.message, true); }
+  BV.saving.delete(id); b._pend = null;
+  if (code === BV.slot) { bvRedrawRow(b); bvDrawCards(); bvDrawChips(); bvDrawHead(); }
+}
+/* ---- add a note: a HubSpot timeline note plus a dated entry on top of the slot's notes field ---- */
+function bvToast(msg, kind) {
+  const t = $('toast'); t.className = 'toast bv-' + kind; t.innerHTML = (kind === 'ok' ? BV_TICK : '') + '<span>' + esc(msg) + '</span>'; t.style.display = 'block';
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', kind === 'ok' ? 3500 : 6000);
+}
+const bvBuyer = id => { const L = BV.lists[BV.slot]; return L && L.buyers ? L.buyers.find(x => x.companyId === id) : null; };
+async function bvAddNote(id) {
+  const code = BV.slot, b = bvBuyer(id);
+  if (!b || BV.saving.has(id) || b._lock) return;
+  const text = (b._draft || '').trim();
+  if (!text) return;
+  BV.saving.add(id); b._adding = true; b._flag = ''; bvRedrawRow(b);   /* Adding... and disabled until the reply: no double notes */
+  try {
+    const { status, body } = await BAPI.addNote(id, { slot: code, text, expected: { notes: b.notes || '' } });
+    if (status === 200 && body.ok) {
+      bvApply(b, body.values); b._draft = ''; b._pin = true; b._hl = true;
+      bvToast('Note added to HubSpot', 'ok');
+      setTimeout(() => { b._hl = false; const el = document.querySelector(`#bvBody tr[data-id="${CSS.escape(id)}"] .bv-nbox`); if (el) el.classList.remove('hl'); }, 2200);
+    } else if (status === 200 && body.partial) {
+      b._lock = true;   /* the note exists: Add stays off until the row reloads, so it cannot be added twice */
+      bvNotice('The note is on the HubSpot timeline, but the notes field was not updated: ' + (body.error || 'unknown reason') + '. Do not add it again.', true);
+    } else if (status === 409) bvStale(code, b, body);   /* typed text stays, nothing saved */
+    else bvToast('Not added. ' + bvError(status, body), 'bad');
+  } catch (e) { bvToast('Not added. ' + e.message, 'bad'); }
+  BV.saving.delete(id); b._adding = false;
+  if (code === BV.slot) { bvRedrawRow(b); bvDrawCards(); bvDrawChips(); bvDrawHead(); }
+}
+function bvStale(code, b, body) {
+  bvApply(b, body.current || {});   /* a blank status in HubSpot (the old "not in slot" answer) reloads the row the same way */
+  b._flag = 'Changed in HubSpot since this page loaded. Row reloaded. Your change was not saved.';
+  toast(b.name + ' was changed in HubSpot after this page loaded. Your change was not saved and the row now shows the current values.', true);
+}
+
+/* ---- set one status on several rows ---- */
+/** A message that stays until dismissed (a toast is gone in 3 seconds, too short for a bulk summary). */
+function bvNotice(text, problem) {
+  const el = $('bvMsg');
+  el.hidden = !text; el.className = 'bv-msg ' + (problem ? 'ap-warn' : 'ap-msg');
+  el.innerHTML = text ? '<span>' + esc(text) + '</span><button class="btn btn-sm" data-act="notice-x">Dismiss</button>' : '';
+}
+/* A bulk run can stop after some calls have already updated rows, so "Nothing was changed" would be wrong here. */
+const bvStopped = msg => String(msg).replace(/ Nothing was changed\.$/, '');
+async function bvBulk() {
+  const code = BV.slot, L = BV.lists[code], status = BV.bulkStatus;
+  const shown = new Set(bvFiltered().map(b => b.companyId));   /* only rows that are shown */
+  const rows = L.buyers.filter(b => BV.checked.has(b.companyId) && shown.has(b.companyId));
+  if (!rows.length || !status || BV.bulkBusy) return;
+  BV.bulkBusy = true; bvNotice(''); bvDrawBar(); bvDrawRows();
+  const t = { updated: 0, unchanged: 0, skipped: 0, failed: 0, notSent: 0 };
+  let stopped = '';
+  /* The server takes at most 100 companies a call: send them in order, one call at a time, and stop at the first call that fails. */
+  for (let i = 0; i < rows.length; i += BV_BULK_MAX) {
+    const chunk = rows.slice(i, i + BV_BULK_MAX);
+    try {
+      const { status: sc, body } = await BAPI.bulk({ slot: code, status, items: chunk.map(b => ({ companyId: b.companyId, expected: b.statusBlank ? '' : b.status })) });
+      if (sc !== 200) { stopped = bvStopped(bvError(sc, body)); t.notSent = rows.length - i; break; }
+      for (const r of body.results || []) {
+        const b = chunk.find(x => x.companyId === r.companyId); if (!b) continue;
+        b._flag = '';
+        if (r.result === 'updated') { b.status = r.status; b.statusBlank = false; b._pin = true; t.updated++; }
+        else if (r.result === 'unchanged') t.unchanged++;
+        else if (r.result === 'failed') t.failed++;      /* HubSpot accepted the batch but did not update this one */
+        else t.skipped++;                                /* changed in HubSpot since this page loaded, or no longer found */
+      }
+    } catch (e) { stopped = bvStopped(e.message); t.notSent = rows.length - i; break; }
+  }
+  BV.bulkBusy = false; BV.checked.clear(); BV.bulkStatus = '';
+  const parts = [t.updated + ' updated'];
+  if (t.unchanged) parts.push(t.unchanged + ' already had that status');
+  parts.push(t.skipped + ' skipped (changed in HubSpot since this page loaded, or no longer found)');
+  parts.push(t.failed + ' failed (HubSpot did not update them)');
+  if (t.notSent) parts.push(t.notSent + ' not sent');
+  const problem = !!(stopped || t.skipped || t.failed);
+  bvNotice((stopped ? 'Stopped: ' + stopped + ' ' : '') + parts.join(', ') + '.' + (problem ? ' The list was reloaded from HubSpot.' : ''), problem);
+  if (problem) bvLoadSlot(code); else bvDrawAll();   /* after any skipped or failed row the slot is reloaded, so nothing on screen is a guess */
+}
+
+/* ---- rename a mandate (display name only; works even when edits are switched off) ---- */
+async function bvSaveName(code) {
+  BV.renameBusy = true; BV.renameErr = ''; bvDrawCards();
+  try {
+    const { status, body } = await BAPI.setMandate(code, BV.draft);
+    if (status === 200) { BV.names = body.names || BV.names; BV.persisted = body.persisted !== false; BV.note = body.note || BV.note; BV.editing = null; toast('Mandate name saved'); }
+    else BV.renameErr = bvError(status, body);
+  } catch (e) { BV.renameErr = e.message; }
+  BV.renameBusy = false; bvDrawCards(); bvDrawHead();
+  if (BV.editing) { const i = $('bvName'); if (i) i.focus(); }
+}
+
+/* ---- add buyer to slot ---- */
+const AB = { results: [], sel: null, slot: 'S1', status: '', busy: false, err: '', timer: null, seq: 0 };
+/* Not Contacted is the status the server gives a new buyer; it is chosen here by value only when HubSpot lists it. */
+const abStart = code => { const l = bvOpts(code).status; return (l.find(o => o.value === 'not_contacted') || l[0] || { value: '' }).value; };
+function abMsg(text, err) { $('abMsg').textContent = text || ''; $('abMsg').className = 'ap-msg' + (err ? ' err' : ''); }
+function abOpen() {
+  Object.assign(AB, { results: [], sel: null, slot: BV.slot, status: abStart(BV.slot), busy: false, err: '' });
+  $('abQ').value = ''; abMsg(''); abDraw();
+  $('abBg').classList.add('on'); $('abQ').focus();
+}
+function abClose() { $('abBg').classList.remove('on'); clearTimeout(AB.timer); AB.seq++; }
+async function abSearch() {
+  const q = $('abQ').value.trim();
+  Object.assign(AB, { sel: null, err: '' });
+  if (q.length < 2) { AB.results = []; abMsg(q ? 'Type at least 2 characters.' : ''); return abDraw(); }
+  const my = ++AB.seq; abMsg('Searching...');
+  try {
+    const { status, body } = await BAPI.search(q);
+    if (my !== AB.seq) return;   /* a newer search has started */
+    if (status !== 200) { AB.results = []; abMsg(bvError(status, body), true); return abDraw(); }
+    AB.results = body.results || [];
+    abMsg(!AB.results.length ? 'No HubSpot companies match.' : AB.results.length >= 10 ? 'Showing the first 10. Type more to narrow it down.' : '');
+  } catch (e) { if (my !== AB.seq) return; AB.results = []; abMsg(e.message, true); }
+  abDraw();
+}
+function abDraw() {
+  $('abList').innerHTML = AB.results.map(c => {
+    const tags = bvCodes().filter(s => c.slots && c.slots[s]).map(s => `<span class="tag warn">In ${s}: ${esc(bvLabel(bvOpts(s).status, c.slots[s]))}</span>`)
+      .concat(c.companyStatus === 'opted_out' ? ['<span class="tag block">Opted out</span>'] : []).join('');
+    return `<button class="ap-row${AB.sel === c ? ' on' : ''}" data-id="${esc(c.id)}">
+      <div class="who"><span class="av">${esc(initials(c.name))}</span><div style="min-width:0"><div class="nm">${esc(c.name || '(no name)')}</div><div class="sub">${esc(c.domain)}</div></div></div>
+      <div class="ap-tags">${tags}</div></button>`;
+  }).join('');
+  abDrawPick();
+}
+function abDrawPick() {
+  const c = AB.sel;
+  if (!c) { $('abPick').innerHTML = ''; return; }
+  const off = !BV.writeEnabled || AB.busy, st = bvOpts(AB.slot).status;
+  $('abPick').innerHTML = `<div class="ap-pick"><div><b>${esc(c.name || '(no name)')}</b>${c.domain ? ` <span class="muted">${esc(c.domain)}</span>` : ''}</div>
+    <div class="row"><label class="muted" for="abSlot">Slot</label><select id="abSlot"${off ? ' disabled' : ''}>${bvCodes().map(s => `<option value="${s}"${s === AB.slot ? ' selected' : ''}>${s}${bvNameOf(s) ? ' · ' + esc(bvNameOf(s)) : ''}</option>`).join('')}</select>
+    <label class="muted" for="abStatus">Starting status</label><select id="abStatus"${off ? ' disabled' : ''}>${st.map(o => `<option value="${esc(o.value)}"${o.value === AB.status ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>
+    <button class="btn btn-go" data-act="ab-go"${off || !AB.status ? ' disabled' : ''}>${AB.busy ? 'Adding...' : 'Add to ' + AB.slot}</button></div>
+    ${BV.writeEnabled ? '' : '<div class="ap-msg">Edits are switched off on the server</div>'}
+    ${AB.err ? `<div class="ap-msg err">${esc(AB.err)}</div>` : ''}
+    <div class="muted">Sets the slot status on this existing company. Furthest stage and notes are left alone. Nothing is created.</div></div>`;
+}
+async function abAdd() {
+  const c = AB.sel; if (!c || AB.busy || !AB.status) return;
+  AB.busy = true; AB.err = ''; abDrawPick();
+  try {
+    const { status, body } = await BAPI.add({ slot: AB.slot, companyId: c.id, status: AB.status });
+    if (status === 200) {
+      const slot = AB.slot, opted = (body.warnings || []).includes('company_opted_out');
+      abClose(); BV.slot = slot; BV.shown = BV_PAGE;
+      toast('Added to ' + slot + '.' + (opted ? ' Note: HubSpot marks this company as opted out.' : ''), opted);
+      bvLoadSlot(slot); return;
+    }
+    if (status === 409 && body.error === 'already_in_slot') {
+      const cur = (body.current && body.current.status) || '';
+      AB.err = body.message || `${c.name} is already in ${body.slot || AB.slot}${cur ? ' (status: ' + bvLabel(bvOpts(body.slot || AB.slot).status, cur) + ')' : ''}. Nothing was changed.`;
+    } else AB.err = bvError(status, body);
+  } catch (e) { AB.err = e.message; }
+  AB.busy = false; abDrawPick();
+}
+
+/* ---- wiring ---- */
+$('bvCards').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const code = b.dataset.slot;
+  if (b.dataset.act === 'pick' && code !== BV.slot) {
+    BV.slot = code; BV.checked.clear(); BV.bulkStatus = ''; BV.shown = BV_PAGE; bvNotice('');
+    if (!BV.lists[code] || BV.lists[code].state === 'error') bvLoadSlot(code); else bvDrawAll();
+  }
+  if (b.dataset.act === 'sumfilter') {   /* a status count on a card: show that slot, only that status */
+    BV.sel[code] = new Set([b.dataset.status]); BV.slot = code; BV.checked.clear(); BV.bulkStatus = ''; BV.shown = BV_PAGE;
+    if (!BV.lists[code] || BV.lists[code].state === 'error') bvLoadSlot(code); else bvDrawAll();
+  }
+  if (b.dataset.act === 'name-edit') { BV.editing = code; BV.draft = bvNameOf(code); BV.renameErr = ''; bvDrawCards(); const i = $('bvName'); if (i) { i.focus(); i.select(); } }
+  if (b.dataset.act === 'name-cancel') { BV.editing = null; BV.renameErr = ''; bvDrawCards(); }
+  if (b.dataset.act === 'name-save' && !BV.renameBusy) bvSaveName(code);
+});
+$('bvCards').addEventListener('input', e => { if (e.target.id === 'bvName') BV.draft = e.target.value; });
+$('bvCards').addEventListener('keydown', e => {
+  if (e.target.id !== 'bvName') return;
+  if (e.key === 'Enter' && !BV.renameBusy) bvSaveName(BV.editing);
+  if (e.key === 'Escape') { BV.editing = null; BV.renameErr = ''; bvDrawCards(); }
+});
+$('bvBody').addEventListener('change', e => {
+  const t = e.target, tr = t.closest('tr[data-id]'); if (!tr) return;
+  const id = tr.dataset.id;
+  if (t.dataset.act === 'chk') { t.checked ? BV.checked.add(id) : BV.checked.delete(id); tr.classList.toggle('sel', t.checked); bvDrawBar(); bvSyncAll(); return; }
+  if (t.dataset.f) { if (t.dataset.f === 'status') t.dataset.tone = bvTone(t.value); bvSave(id, t.dataset.f, t.value); }
+});
+$('bvBody').addEventListener('input', e => {
+  if (!e.target.classList.contains('bv-ninput')) return;
+  const tr = e.target.closest('tr[data-id]'), b = tr && bvBuyer(tr.dataset.id); if (b) b._draft = e.target.value;
+});
+$('bvBody').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || !e.target.classList.contains('bv-ninput')) return;
+  e.preventDefault(); const tr = e.target.closest('tr[data-id]'); if (tr) bvAddNote(tr.dataset.id);
+});
+$('bvBody').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const tr = b.closest('tr[data-id]');
+  if (b.dataset.act === 'note-add' && tr) bvAddNote(tr.dataset.id);
+  if (b.dataset.act === 'notes-toggle' && tr) { const r = bvBuyer(tr.dataset.id); if (r) { r._exp = !r._exp; bvRedrawRow(r); } }
+  if (b.dataset.act === 'retry') bvLoadSlot(BV.slot);
+  if (b.dataset.act === 'more') { BV.shown += BV_PAGE; bvDrawRows(); }
+});
+$('bvAll').addEventListener('change', e => {
+  const vis = bvFiltered();
+  vis.forEach(b => e.target.checked ? BV.checked.add(b.companyId) : BV.checked.delete(b.companyId));
+  bvDrawRows(); bvDrawBar();
+});
+$('bvBar').addEventListener('change', e => { if (e.target.id === 'bvBulkSel') { BV.bulkStatus = e.target.value; bvDrawBar(); } });
+$('bvBar').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.act === 'bulk-go') bvBulk();
+  if (b.dataset.act === 'bulk-clear') { BV.checked.clear(); BV.bulkStatus = ''; bvDrawBar(); bvDrawRows(); }
+});
+$('bvMsg').addEventListener('click', e => { if (e.target.closest('[data-act=notice-x]')) bvNotice(''); });
+$('bvQ').addEventListener('input', e => { BV.q = e.target.value; bvRefilter(); });
+$('bvChips').addEventListener('click', e => {
+  const p = e.target.closest('.preset'), c = e.target.closest('.chip');
+  if (p) {
+    BV.sel[BV.slot] = p.dataset.p === 'all' ? new Set(['*', ...bvOpts().status.map(o => o.value)]) : new Set(BV_ACTIVE);
+    return bvRefilter();
+  }
+  if (!c) return;
+  const sel = bvSel(BV.slot); sel.delete('*');   /* choosing chips by hand ends Show all */
+  if (sel.has(c.dataset.k)) sel.delete(c.dataset.k); else sel.add(c.dataset.k);
+  bvRefilter();
+});
+$('bvAddBtn').addEventListener('click', abOpen);
+$('abClose').addEventListener('click', abClose);
+$('abBg').addEventListener('click', e => { if (e.target === $('abBg')) abClose(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('abBg').classList.contains('on')) abClose(); });
+$('abQ').addEventListener('input', () => { clearTimeout(AB.timer); AB.timer = setTimeout(abSearch, 350); });
+$('abList').addEventListener('click', e => {
+  const b = e.target.closest('.ap-row'); if (!b || AB.busy) return;
+  AB.sel = AB.results.find(c => c.id === b.dataset.id) || null; AB.err = '';
+  if (!AB.status) AB.status = abStart(AB.slot);
+  abDraw();
+});
+$('abPick').addEventListener('change', e => {
+  if (e.target.id === 'abSlot') { AB.slot = e.target.value; AB.status = abStart(AB.slot); AB.err = ''; abDrawPick(); }
+  if (e.target.id === 'abStatus') AB.status = e.target.value;
+});
+$('abPick').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.act === 'ab-go') abAdd(); });
+
+/* ---- demo mode: the same routes answered from memory, so "Preview with demo data" shows the tab ---- */
+const DEMO_BV = (() => {
+  const wait = (v, ms = 700) => new Promise(r => setTimeout(() => r(v), ms));
+  const opt = l => l.map(([value, label]) => ({ value, label }));
+  const ST = [['not_contacted', 'Not Contacted'], ['contacted_no_reply', 'Contacted - No Reply'], ['replied', 'Replied'], ['teaser_sent_awaiting_reply', 'Teaser Sent - Awaiting Reply'],
+    ['in_process', 'In Process'], ['went_quiet', 'Went Quiet'], ['soft_pass_retry', 'Soft Pass - Retry'], ['passed_do_not_retry', 'Passed - Do Not Retry'], ['exclude', 'Exclude']];
+  const FU = [['teaser_sent', 'Teaser Sent'], ['nda', 'NDA'], ['data_room', 'Data Room'], ['eoi_submitted', 'EOI Submitted'], ['management_meeting', 'Management Meeting'], ['loi', 'LOI']];
+  const CS = [['interested', 'Interested', 1], ['not_now', 'Reconnect Later', 1], ['prospect', 'Prospect', 1], ['went_cold', 'Went Cold', 1], ['wrong_contact', 'Wrong Contact', 1],
+    ['not_interested', 'Not Interested', 1], ['not_a_fit', 'Not a Fit', 1], ['in_sequence', 'In Sequence', 0], ['no_reply', 'No Reply', 0], ['bounced', 'bounced', 0],
+    ['replied_unclassified', 'Replied (unclassified)', 0], ['opted_out', 'Opted Out', 0], ['client', 'Client', 0], ['previous_prospect', 'Previous Prospect', 0]];
+  const names = { S1: 'Northline', S2: '', S3: '' };
+  const first = ['Jordan', 'Sam', 'Alex', 'Pat', 'Chris', 'Taylor', 'Morgan'], last = ['Lee', 'Rivera', 'Chen', 'Park', 'Kim', 'Reid', 'Ito'];
+  const mk = (n, status, furthest, notes, days, channel) => ({
+    companyId: String(8000 + n), name: 'Demo Buyer ' + n, domain: 'demobuyer' + n + '.example', status, furthest, notes,
+    contact: { hubspotId: String(7000 + n), name: first[n % 7] + ' ' + last[(n * 3) % 7], email: 'contact' + n + '@demobuyer' + n + '.example' },
+    channel, lastTouchAt: days == null ? null : new Date(Date.now() - days * 864e5).toISOString(), hubspotUrl: null,
+    statusBlank: status === 'not_contacted' && days == null   /* enrolled, nothing sent yet: blank in HubSpot, shown as Not Contacted */
+  });
+  const db = { S1: [], S2: [], S3: [] };
+  const s1 = [['replied', '', 'Asked for the teaser', 2, 'email'], ['contacted_no_reply', '', '', 5, 'linkedin'], ['in_process', 'nda', 'NDA out for signature', 1, 'email'],
+    ['went_quiet', 'teaser_sent', '', 21, 'email'], ['not_contacted', '', '', null, null], ['contacted_no_reply', '', '', 9, 'both'], ['replied', '', '', 3, 'email'],
+    ['soft_pass_retry', 'teaser_sent', 'Revisit in Q2', 30, 'email'], ['not_contacted', '', '', null, null], ['contacted_no_reply', '', '', 6, 'email'], ['teaser_sent_awaiting_reply', 'teaser_sent', '', 4, 'email'],
+    ['contacted_no_reply', '', '', 8, 'linkedin'], ['not_contacted', '', '', null, null], ['passed_do_not_retry', '', 'Not a fit on size', 40, 'email']];
+  s1.forEach((r, i) => db.S1.push(mk(i + 1, ...r)));
+  /* 136 more, so the list is long: 106 of the 150 are active (Select all above 100 rows, in two calls to the server). */
+  const cycle = ['replied', 'teaser_sent_awaiting_reply', 'in_process', 'replied', 'teaser_sent_awaiting_reply', 'contacted_no_reply', 'went_quiet', 'in_process'];
+  for (let n = 15; n <= 150; n++) db.S1.push(mk(n, cycle[n % 8], '', '', 2 + (n % 20), n % 3 === 0 ? 'linkedin' : 'email'));
+  [['teaser_sent_awaiting_reply', 'teaser_sent', 'Teaser sent Monday', 3, 'email'], ['replied', '', '', 0, 'email'], ['contacted_no_reply', '', '', 7, 'both']]
+    .forEach((r, i) => db.S2.push(mk(300 + i, ...r)));
+  db.S2.push(mk(310, 'not_contacted', '', '', null, null));
+  db.S3.push(mk(400, 'not_contacted', '', '', null, null), mk(401, 'not_contacted', '', '', null, null));   /* a new slot: enrolled, nothing sent yet */
+  const extra = ['Demo Company Alpha', 'Demo Company Beta', 'Demo Company Gamma'].map((n, i) => ({ id: String(8500 + i), name: n, domain: 'democo' + i + '.example', companyStatus: i === 2 ? 'opted_out' : '' }));
+  const find = (slot, id) => (db[slot] || []).find(b => b.companyId === id);
+  const vals = b => ({ status: b.statusBlank ? '' : b.status, furthest: b.furthest, notes: b.notes });
+  const failIds = new Set();                    /* for testing: company ids a bulk call reports as failed */
+  const sf = { loading: 0, off: false };        /* for testing: answer 503 salesforge_loading n times, or salesforge_not_configured */
+  const builtAt = new Date(Date.now() - 12 * 60000).toISOString();
+  return {
+    options: () => wait({ status: 200, body: { writeEnabled: true, contactStatus: CS.map(([value, label, sel]) => ({ value, label, selectable: !!sel })),
+      slots: Object.fromEntries(Object.keys(db).map(s => [s, { status: opt(ST), furthest: opt(FU) }])) } }, 250),
+    mandates: () => wait({ status: 200, body: { names: { ...names }, persisted: true, note: 'Sequences are matched to a slot by the S1, S2 or S3 prefix of their name, not by this display name.' } }, 150),
+    setMandate: (slot, name) => { names[slot] = String(name).replace(/\s+/g, ' ').trim(); return wait({ status: 200, body: { ok: true, names: { ...names }, persisted: true, note: '' } }, 200); },
+    failIds, sf,
+    list: slot => {
+      if (sf.off) return wait({ status: 503, body: { error: 'salesforge_not_configured', message: 'Salesforge is not connected on the server, so the list of enrolled buyers cannot be built.' } }, 300);
+      if (sf.loading > 0) { sf.loading--; return wait({ status: 503, body: { error: 'salesforge_loading', message: 'Still loading Salesforge. The list appears as soon as the first pull finishes, usually within a minute or two.' } }, 300); }
+      return wait({ status: 200, body: { slot, writeEnabled: true, mandateName: names[slot], touchesReady: true, salesforgeBuiltAt: builtAt, count: db[slot].length,
+        enrolledEmails: db[slot].length + (slot === 'S1' ? 4 : 0), unmatchedEmails: slot === 'S1' ? 3 : 0, noCompanyEmails: slot === 'S1' ? 1 : 0, noEmailLeads: slot !== 'S3' ? 2 : 0,
+        buyers: db[slot].map(b => ({ ...b })) } }, slot === 'S1' ? 1500 : 800);
+    },
+    update: (id, o) => { const b = find(o.slot, id); if (!b) return wait({ status: 404, body: { error: 'not_found' } }, 200);
+      if (b.statusBlank && o.expected.status !== '') return wait({ status: 409, body: { error: 'not_in_slot', slot: o.slot, current: vals(b) } }, 200);   /* blank: the page must say it loaded it blank */
+      Object.entries(o.changes).forEach(([k, v]) => { b[k] = v; }); if (o.changes.status) b.statusBlank = false;
+      return wait({ status: 200, body: { ok: true, companyId: id, slot: o.slot, values: vals(b) } }, 300); },
+    addNote: (id, o) => { const b = find(o.slot, id); if (!b) return wait({ status: 404, body: { error: 'not_found' } }, 200);
+      if ((b.notes || '') !== o.expected.notes) return wait({ status: 409, body: { error: 'stale', slot: o.slot, fields: ['notes'], current: vals(b) } }, 200);
+      const day = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Edmonton' });
+      b.notes = '[' + day + '] ' + o.text.trim() + (b.notes ? '\n\n' + b.notes : '');
+      return wait({ status: 200, body: { ok: true, noteId: 'demo', companyId: id, slot: o.slot, values: vals(b) } }, 500); },
+    bulk: o => {
+      const results = o.items.map(i => {
+        const b = find(o.slot, i.companyId); if (!b) return { companyId: i.companyId, result: 'not_found' };
+        const cur = b.statusBlank ? '' : b.status;
+        if (!cur && i.expected !== '') return { companyId: i.companyId, result: 'not_in_slot', current: '' };
+        if (cur !== i.expected) return { companyId: i.companyId, result: 'stale', current: cur };
+        if (cur === o.status) return { companyId: i.companyId, result: 'unchanged', status: cur };
+        if (failIds.has(i.companyId)) return { companyId: i.companyId, result: 'failed' };
+        b.status = o.status; b.statusBlank = false; return { companyId: i.companyId, result: 'updated', status: o.status };
+      });
+      return wait({ status: 200, body: { ok: true, slot: o.slot, updated: results.filter(r => r.result === 'updated').length, failed: results.filter(r => r.result === 'failed').length, results } }, 400);
+    },
+    search: q => { const all = [...Object.entries(db).flatMap(([s, l]) => l.map(b => ({ id: b.companyId, name: b.name, domain: b.domain, companyStatus: '' }))), ...extra];
+      const seen = new Map(); all.forEach(c => seen.set(c.id, c));
+      const hits = [...seen.values()].filter(c => c.name.toLowerCase().includes(q.toLowerCase())).slice(0, 10)
+        .map(c => ({ ...c, slots: Object.fromEntries(Object.keys(db).map(s => [s, (find(s, c.id) || {}).status || ''])) }));
+      return wait({ status: 200, body: { results: hits } }, 300); },
+    add: o => { const ex = [...db[o.slot]].find(b => b.companyId === o.companyId);
+      if (ex) return wait({ status: 409, body: { error: 'already_in_slot', slot: o.slot, current: vals(ex) } }, 300);
+      const c = extra.find(x => x.id === o.companyId) || Object.values(db).flat().find(b => b.companyId === o.companyId);
+      db[o.slot].push({ ...mk(Number(o.companyId) - 8000 + 100, o.status, '', '', null, null), companyId: o.companyId, name: c.name, domain: c.domain });
+      return wait({ status: 200, body: { ok: true, companyId: o.companyId, slot: o.slot, status: o.status, warnings: c.companyStatus === 'opted_out' ? ['company_opted_out'] : [] } }, 300); }
+  };
+})();
+
+/* ================= LOADING ================= */
+async function loadChart() {
+  const { from, to } = rangeFor($('range').value);
+  const [daily, replies, visits] = await Promise.all([API.daily(from, to), API.replies(from, to), Promise.resolve().then(() => API.visits(from, to)).catch(() => null)]);
+  S.visits = visits;
+  const byDate = Object.fromEntries(daily.map(d => [d.date, d]));
+  /* Days with no sends (weekends) are left out so the curve stays smooth. Replies that land on those days
+     are shown on the next sending day (the day panel says so). */
+  const all = dayList(from, to).map(date => byDate[date] || { date, emailSent: 0, linkedinSent: 0 });
+  S.daily = all.filter(d => d.emailSent + d.linkedinSent > 0);
+  if (!S.daily.length) S.daily = all;
+  S.chartReplies = replies;
+  if (!S.selectedDay || !S.daily.some(d => d.date === S.selectedDay)) {
+    const withReplies = S.daily.filter(d => replies.some(r => !r.ooo && bucketDay(r.repliedAt) === d.date));
+    S.selectedDay = (withReplies[withReplies.length - 1] || S.daily[S.daily.length - 1]).date;
+  }
+  drawFunnel(); drawChart(); drawVisits(); drawDay();
+}
+async function loadTable() {
+  const { from, to } = rangeFor($('fTime').value);
+  S.tableReplies = await API.replies(from, to);
+  fillSeqFilter(); drawLeads();
+}
+async function loadPipeline() {
+  const [p, deals] = await Promise.all([API.pipeline(), API.prospects()]);
+  S.stages = (p.stages || []).map(s => ({ ...s, id: String(s.id) })).sort((a, b) => a.order - b.order);
+  S.deals = deals; drawProspects();
+}
+async function reloadReplies() { await Promise.all([loadChart(), loadTable()]); }
+async function refreshAll() {
+  $('refreshBtn').disabled = true;
+  try {
+    await Promise.all([loadChart(), loadTable(), loadPipeline(), loadOptions()]);
+    drawFunnel(); drawDay(); drawLeads();   /* labels may have come from the options route */
+    $('updated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  } catch (err) { toast(err.message, true); }
+  finally { $('refreshBtn').disabled = false; }
+}
+
+/* ================= LOGIN ================= */
+const SAVED_KEY = 'rwt_outreach_key';
+const saved = {
+  get() { try { return localStorage.getItem(SAVED_KEY); } catch { return null; } },
+  set(v) { try { localStorage.setItem(SAVED_KEY, v); } catch {} },
+  clear() { try { localStorage.removeItem(SAVED_KEY); } catch {} }
+};
+async function tryKey(pw) {
+  const r = await fetch(CONFIG.apiBase + '/dashboard/ping', { headers: { 'x-dashboard-key': pw } });
+  if (r.status === 401) throw new Error('Wrong password.');
+  if (r.status === 429) throw new Error('Too many tries. Wait 15 minutes and try again.');
+  if (!r.ok) throw new Error('Server error ' + r.status + '.');
+}
+async function login() {
+  const pw = $('pw').value.trim();
+  if (!pw) { $('gateErr').textContent = 'Enter the password.'; return; }
+  $('gateErr').textContent = ''; $('loginBtn').disabled = true;
+  try { await tryKey(pw); S.key = pw; S.mode = 'live'; if ($('remember').checked) saved.set(pw); else saved.clear(); start(); }
+  catch (err) { S.key = null; $('gateErr').textContent = err.message === 'Failed to fetch' ? "Can't reach the server." : err.message; }
+  finally { $('loginBtn').disabled = false; }
+}
+async function autoLogin() {
+  const pw = saved.get(); if (!pw) return;
+  $('gateErr').textContent = 'Signing you in...';
+  try { await tryKey(pw); S.key = pw; S.mode = 'live'; $('gateErr').textContent = ''; start(); }
+  catch (err) {
+    if (err.message === 'Wrong password.') { saved.clear(); $('gateErr').textContent = 'The password has changed. Enter the new one.'; }
+    else $('gateErr').textContent = err.message === 'Failed to fetch' ? "Can't reach the server. Try again in a minute." : err.message;
+  }
+}
+function start() {
+  $('gate').style.display = 'none'; $('app').style.display = 'block';
+  $('demoBanner').style.display = S.mode === 'demo' ? 'block' : 'none';
+  $('bvDemo').style.display = S.mode === 'demo' ? 'block' : 'none';
+  showTab(location.hash === '#spintax' ? 'spintax' : location.hash === '#buyers' ? 'buyers' : 'outreach');
+  refreshAll();
+  if (CONFIG.autoRefreshMinutes > 0) S.timer = setInterval(refreshAll, CONFIG.autoRefreshMinutes * 60000);
+}
+function logout() { saved.clear(); S.key = null; clearInterval(S.timer); location.reload(); }
+
+/* ================= TABS ================= */
+/* Three panes: the Outreach page above, the Buyers view, and the Spintax generator in an iframe. The iframe loads the first time its tab opens. */
+function showTab(name) {
+  const spx = name === 'spintax', byr = name === 'buyers', out = !spx && !byr;
+  $('paneOutreach').classList.toggle('pane-off', !out);
+  $('paneBuyers').classList.toggle('pane-off', !byr);
+  $('paneSpintax').classList.toggle('pane-off', !spx);
+  $('app').classList.toggle('on-spintax', spx);
+  $('app').classList.toggle('on-buyers', byr);
+  [['tabOutreach', out], ['tabBuyers', byr], ['tabSpintax', spx]].forEach(([id, on]) => { $(id).classList.toggle('active', on); $(id).setAttribute('aria-selected', on ? 'true' : 'false'); });
+  if (spx) {
+    const f = $('spintaxFrame');
+    if (!f.getAttribute('src')) f.setAttribute('src', f.dataset.src);
+    $('spxNote').hidden = S.mode !== 'demo';
+    sendKeyToSpintax();
+  }
+  if (byr) bvOpen();
+  try { history.replaceState(null, '', spx ? '#spintax' : byr ? '#buyers' : location.pathname + location.search); } catch {}
+}
+/* The password goes only to our own iframe, only on our own origin, and only on request or on load. */
+function sendKeyToSpintax() {
+  const f = $('spintaxFrame');
+  if (S.mode === 'live' && S.key && f && f.contentWindow) f.contentWindow.postMessage({ type: 'spintax-key', key: S.key }, location.origin);
+}
+window.addEventListener('message', e => {
+  const f = $('spintaxFrame');
+  if (e.origin !== location.origin || !f || e.source !== f.contentWindow) return;
+  if (e.data && e.data.type === 'spintax-ready') sendKeyToSpintax();
+});
+$('spintaxFrame').addEventListener('load', sendKeyToSpintax);
+
+/* ================= WIRING ================= */
+$('loginBtn').addEventListener('click', login);
+$('pw').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+$('demoBtn').addEventListener('click', () => { S.mode = 'demo'; start(); });
+$('logoutBtn').addEventListener('click', logout);
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+$('refreshBtn').addEventListener('click', () => { refreshAll(); if (!$('paneBuyers').classList.contains('pane-off')) bvLoadAll(); });
+$('range').addEventListener('change', () => { S.selectedDay = null; loadChart().catch(e => toast(e.message, true)); });
+$('fTime').addEventListener('change', () => loadTable().catch(e => toast(e.message, true)));
+['fQ', 'fCh', 'fSeq'].forEach(id => $(id).addEventListener(id === 'fQ' ? 'input' : 'change', drawLeads));
+$('csvBtn').addEventListener('click', exportCSV);
+autoLogin();
+</script>
+</body>
+</html>

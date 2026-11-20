@@ -636,7 +636,14 @@ const dotColor = r => r.channel === 'linkedin' ? CONFIG.colors.linkedinDot : CON
 /* Chat icon: opens the reply's conversation in Salesforge Primebox. No saved thread id: a grey dashed icon that is not a link. Out-of-office replies get none. */
 const CHAT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"></path></svg>';
 const primeboxUrl = threadId => `https://app.salesforge.ai/${CONFIG.salesforgeWorkspaceSlug}/primebox/all/${encodeURIComponent(threadId)}`;
-const NO_THREAD = 'No Salesforge conversation saved for this reply yet. Older replies fill in after the backfill.';
+const NO_THREAD = 'No Salesforge conversation saved for this reply.';
+const NO_THREAD_BUYER = 'No Salesforge conversation saved for this reply yet.';
+/* Buyers tab: only on buyers whose contact replied (replied from the server). A reply with no saved conversation: the grey icon. No reply: no icon at all. */
+function bvChat(b) {
+  if (!b.replied) return '';
+  if (b.threadId) return `<a class="chat" target="_blank" rel="noopener" href="${esc(primeboxUrl(b.threadId))}" aria-label="Open conversation in Salesforge" title="Open conversation in Salesforge">${CHAT_SVG}</a>`;
+  return `<span class="chat-off" role="img" aria-label="${NO_THREAD_BUYER}" title="${NO_THREAD_BUYER}">${CHAT_SVG}</span>`;
+}
 function chatIcon(r) {
   if (r.ooo) return '';
   if (r.threadId) return `<a class="chat" target="_blank" rel="noopener" href="${esc(primeboxUrl(r.threadId))}" aria-label="Open conversation in Salesforge" title="Open conversation in Salesforge">${CHAT_SVG}</a>`;
@@ -1728,7 +1735,7 @@ function bvRowHtml(b) {
     <td><select data-f="furthest" aria-label="Furthest stage for ${esc(b.name)}"${dis}>${fuOpts}</select></td>
     <td>${bvNotesCell(b, dis)}</td>
     <td>${touch}</td>
-    <td>${hs}</td></tr>`;
+    <td><span class="hsbox">${bvChat(b)}${hs}</span></td></tr>`;
 }
 function bvDrawRows() {
   const L = bvList(), body = $('bvBody');
@@ -2060,7 +2067,9 @@ const DEMO_BV = (() => {
     companyId: String(8000 + n), name: 'Demo Buyer ' + n, domain: 'demobuyer' + n + '.example', status, furthest, notes,
     contact: { hubspotId: String(7000 + n), name: first[n % 7] + ' ' + last[(n * 3) % 7], email: 'contact' + n + '@demobuyer' + n + '.example' },
     channel, lastTouchAt: days == null ? null : new Date(Date.now() - days * 864e5).toISOString(), hubspotUrl: null,
-    statusBlank: status === 'not_contacted' && days == null   /* enrolled, nothing sent yet: blank in HubSpot, shown as Not Contacted */
+    statusBlank: status === 'not_contacted' && days == null,   /* enrolled, nothing sent yet: blank in HubSpot, shown as Not Contacted */
+    /* demo only: a buyer has replied once it is past Contacted - No Reply; most replies have a saved conversation, every third does not (grey icon) */
+    replied: !['not_contacted', 'contacted_no_reply', 'exclude'].includes(status), threadId: !['not_contacted', 'contacted_no_reply', 'exclude'].includes(status) && n % 3 !== 0 ? 'mth_demobuyer' + n : null
   });
   const db = { S1: [], S2: [], S3: [] };
   const s1 = [['replied', '', 'Asked for the teaser', 2, 'email'], ['contacted_no_reply', '', '', 5, 'linkedin'], ['in_process', 'nda', 'NDA out for signature', 1, 'email'],
