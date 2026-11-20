@@ -43,7 +43,7 @@ Server routes this page expects (see DASHBOARD_API_BRIEF_v5.md)
 
 Buyers tab
   Slot cards (S1, S2, S3) act as tabs. Every dropdown option and label comes from GET /dashboard/options; the page only keeps the fixed display order of the chips and summaries.
-  The table shows active statuses by default (chips, filtered in the page from the rows already loaded). Colours for this tab are variables on .buyers-tab.
+  The table shows active statuses by default (chips, filtered in the page from the rows already loaded). Status tones (teal, silver, orange, deep orange, charcoal) are set by BV_STATUS_TONE in the script.
   Edits, bulk status and Add buyer to slot write to HubSpot through the server and are off unless the server says writeEnabled (BUYERS_WRITE_ENABLED).
   Renaming a mandate only changes its display name; sequences are still matched to a slot by the S1, S2 or S3 prefix.
 
@@ -207,7 +207,7 @@ td select{height:28px;font-size:12px}
 .btn-go:hover{background:var(--orange-soft)}
 .btn:disabled{opacity:.5;cursor:default}
 
-/* Buyers tab. Layout first, then the blue styling, which is scoped to .buyers-tab so no other tab changes colour. */
+/* Buyers tab. Layout first, then the mockup styling further down (shared tokens only). */
 #app.on-buyers #range{display:none}
 .bv-note{background:#fff6e5;color:#7a4b00;border:1px solid #f3d9a4;border-radius:var(--radius);padding:8px 12px;font-size:13px}
 .bv-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
@@ -245,52 +245,53 @@ td select{height:28px;font-size:12px}
 @keyframes bvspin{to{transform:rotate(360deg)}}
 .ap-pick select{min-width:160px}
 
-/* Blue styling for the Buyers tab only. The colours are variables on the wrapper; nothing outside .buyers-tab uses them. */
-.buyers-tab{--bt-text:#1B2433;--bt-text2:#4A5568;--bt-head:#F7F8FB;--bt-line:#EEF1F6;--bt-border:#DDE2EA;--bt-blue:#1F4FB4;
-  --bt-bulk-bg:#E8EEFB;--bt-bulk-text:#17408F;--bt-bulk-border:#9FB4E0;--bt-sel:#F2F6FE;--bt-pop:#12203A;color:var(--bt-text)}
-.buyers-tab .muted,.buyers-tab .bv-code,.buyers-tab .bv-icon{color:var(--bt-text2)}
-.buyers-tab .tbl-head h2,.buyers-tab .bv-pick b{color:var(--bt-text)}
-.buyers-tab .panel,.buyers-tab .bv-card{border-color:var(--bt-border)}
-.buyers-tab input,.buyers-tab select,.buyers-tab textarea{border-color:var(--bt-border)}
-.buyers-tab th{background:var(--bt-head);color:var(--bt-text2);border-bottom-color:var(--bt-line)}
-.buyers-tab td{border-bottom-color:var(--bt-line)}
-.buyers-tab .bv-card.on{border-color:var(--bt-blue);box-shadow:0 0 0 1px var(--bt-blue)}
-.buyers-tab .bv-card.on .bv-code{color:var(--bt-blue)}
-.buyers-tab .chip{background:#fff;border-color:var(--bt-border);color:var(--bt-text2)}
-.buyers-tab .chip.on{background:var(--bt-blue);border-color:var(--bt-blue);color:#fff}
-.buyers-tab .btn-go{background:transparent;border-color:var(--orange);color:var(--orange)}
-.buyers-tab .btn-go:hover{background:var(--orange-soft)}
-.buyers-tab .bv-edit input{border:2px solid var(--bt-blue)}
-.buyers-tab .bv-count{color:var(--bt-blue)}
-.buyers-tab .bv-bar{background:var(--bt-bulk-bg);color:var(--bt-bulk-text)}
-.buyers-tab .bv-bar .muted{color:var(--bt-bulk-text)}
-.buyers-tab .bv-bar select{border-color:var(--bt-bulk-border)}
-.buyers-tab .bv-tbl tr.sel td{background:var(--bt-sel)}
-/* Status colours (Buyers tab only). Tone comes from BV_STATUS_TONE in the script; the select stays native. */
-.buyers-tab .bv-tbl select option{background:#fff;color:var(--bt-text);font-weight:400}
-.buyers-tab .bv-tbl select[data-tone=green]{background:#e2f3e7;border-color:#93cfa6;color:#14532d;font-weight:600}
-.buyers-tab .bv-tbl select[data-tone=grey]{background:#eef0f3;border-color:#cbd2dc;color:#374151}
-.buyers-tab .bv-tbl select[data-tone=amber]{background:#fdf0d8;border-color:#e8b866;color:#6b3f04;font-weight:600}
-.buyers-tab .bv-tbl select[data-tone=red]{background:#fbe3e3;border-color:#e39a9a;color:#7f1d1d;font-weight:600}
-.buyers-tab .bv-tbl select[data-tone=dark]{background:#33383f;border-color:#33383f;color:#fff;font-weight:600}
-.buyers-tab .bv-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;flex:none}
-.buyers-tab .bv-dot[data-tone=green]{background:#1e8e4e}
-.buyers-tab .bv-dot[data-tone=grey]{background:#8a94a3}
-.buyers-tab .bv-dot[data-tone=amber]{background:#d98a0b}
-.buyers-tab .bv-dot[data-tone=red]{background:#c0392b}
-.buyers-tab .bv-dot[data-tone=dark]{background:#33383f}
-.buyers-tab .chip.on .bv-dot{box-shadow:0 0 0 2px #fff}
-/* Notes cell: latest entry, Show all, and a one-line Add. */
-.buyers-tab .bv-ncell{display:flex;flex-direction:column;gap:6px;min-width:200px}
-.buyers-tab .bv-nbox{background:#f6f7f9;border:1px solid #e6e8ec;border-radius:8px;padding:6px 9px;font-size:13px;transition:background .6s}
-.buyers-tab .bv-nbox.hl{background:#eaf1ff}
-.buyers-tab .bv-nlatest{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere}
-.buyers-tab .bv-nfull{max-height:92px;overflow-y:auto;white-space:pre-wrap;overflow-wrap:anywhere}
-.buyers-tab .bv-nlink{background:none;border:none;padding:0;margin-top:3px;font-size:12px;color:var(--bt-blue);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
-.buyers-tab .bv-nadd{display:flex;gap:6px}
-.buyers-tab .bv-ninput{flex:1;min-width:0;height:30px;padding:0 8px;border:1px solid var(--bt-border);border-radius:var(--radius);background:#fff;color:var(--bt-text);font:inherit;font-size:13px}
-.buyers-tab .bv-nbtn{height:30px;padding:0 12px;border:1px solid var(--bt-blue);border-radius:var(--radius);background:#fff;color:var(--bt-blue);font-size:13px;font-weight:600;cursor:pointer}
-.buyers-tab .bv-nbtn:disabled{background:#eef0f3;border-color:#cbd2dc;color:#8a94a3;cursor:default}
+/* Buyers tab (mockup styles, built only from the shared tokens) */
+.bv-cards{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.bv-card{border:none;box-shadow:var(--shadow);border-radius:10px;padding:14px 16px;flex-direction:row;align-items:stretch;gap:14px}
+.bv-card.on{box-shadow:0 0 0 1.5px var(--orange)}
+.bv-mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.bv-code{font-weight:400;font-size:11px;color:var(--text3)}
+.bv-card.on .bv-code{color:var(--orange)}
+.mdot{width:8px;height:8px;border-radius:50%;flex:none}
+.bv-top{justify-content:flex-start;gap:8px}
+.bv-top>span:last-child{margin-left:auto}
+.bv-pick b{font-size:16px;font-weight:500;color:var(--text)}
+.bv-icon{color:var(--text3)}
+.bv-count{color:var(--orange)}
+.bv-edit input{border:2px solid var(--orange)}
+.ring{flex:none;align-self:center;width:58px;height:58px;border-radius:50%;display:grid;place-items:center}
+.ring>div{width:44px;height:44px;border-radius:50%;background:var(--surface);display:grid;place-items:center;align-content:center;text-align:center;line-height:1.05}
+.ring b{font-size:13px;font-weight:500}.ring small{font-size:9px;color:var(--text3)}
+.bv-bar{background:var(--orange-soft);color:var(--orange);border:none}
+.bv-bar .muted{color:var(--orange)}
+.bv-bar select{border-color:var(--orange-line)}
+.bv-tbl tr.sel td{background:var(--hover)}
+.bv-tbl input[type=checkbox],#bvAll{accent-color:var(--orange)}
+.bv-tbl select option{background:var(--surface);color:var(--text);font-weight:400}
+.bv-tbl select[data-tone=teal]{background:linear-gradient(135deg,rgba(15,148,136,.30),rgba(44,196,178,.12));border-color:rgba(44,196,178,.6);color:var(--teal-ink);font-weight:500}
+.bv-tbl select[data-tone=silver]{background:linear-gradient(135deg,rgba(118,124,135,.28),rgba(163,169,179,.10));border-color:rgba(163,169,179,.6);color:var(--text2)}
+.bv-tbl select[data-tone=orange]{background:linear-gradient(135deg,rgba(232,80,31,.28),rgba(255,122,77,.10));border-color:var(--orange-line);color:var(--orange);font-weight:500}
+.bv-tbl select[data-tone=deep]{background:linear-gradient(135deg,rgba(150,40,10,.45),rgba(232,80,31,.14));border-color:#b8401a;color:var(--orange);font-weight:500}
+.bv-tbl select[data-tone=dark]{background:#33383f;border-color:#33383f;color:#fff;font-weight:500}
+.bv-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;flex:none}
+.bv-dot[data-tone=teal]{background:var(--g-teal)}
+.bv-dot[data-tone=silver]{background:var(--g-sil)}
+.bv-dot[data-tone=orange]{background:var(--g-ora)}
+.bv-dot[data-tone=deep]{background:#b8401a}
+.bv-dot[data-tone=dark]{background:#33383f}
+.bv-ncell{display:flex;flex-direction:column;gap:6px;min-width:210px}
+.bv-nbox{background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12px;color:var(--text2);transition:background .6s}
+.bv-nbox.hl{background:var(--orange-soft)}
+.bv-nlatest{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere}
+.bv-nfull{max-height:92px;overflow-y:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.bv-nlink{background:none;border:none;padding:0;margin-top:3px;font-size:11px;color:var(--orange);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.bv-nadd{display:flex;gap:6px}
+.bv-ninput{flex:1;min-width:0;height:28px;padding:0 8px;border:1px solid var(--line2);border-radius:8px;background:var(--surface2);color:var(--text);font:inherit;font-size:12px}
+.bv-nbtn{height:28px;padding:0 12px;border:1px solid var(--orange);border-radius:8px;background:transparent;color:var(--orange);font-size:12px;cursor:pointer}
+.bv-nbtn:hover:not(:disabled){background:var(--orange-soft)}
+.bv-nbtn:disabled{border-color:var(--line2);color:var(--text3);cursor:default}
+.bv-lt{display:inline-flex;align-items:center;gap:6px;color:var(--text2);font-size:12px}
+.bv-ic{color:var(--text3)}
 .toast.bv-ok{background:#14532d}
 .toast.bv-bad{background:#7f1d1d}
 .toast .bv-tick{width:15px;height:15px;vertical-align:-3px;margin-right:7px}
@@ -363,20 +364,6 @@ select.int{color:var(--orange);border-color:var(--orange-line)}
 :root[data-theme="dark"] .tag.buyer{border-color:#4a5575;color:#9fb0d8}
 :root[data-theme="dark"] .dot{box-shadow:0 0 0 1.5px var(--surface),0 0 0 2px rgba(255,255,255,0.12)}
 :root[data-theme="dark"] .demo-banner,:root[data-theme="dark"] .bv-note,:root[data-theme="dark"] .ap-warn,:root[data-theme="dark"] .spx-note{background:rgba(255,102,51,.12);border-color:var(--orange-line);color:#ffb59c}
-:root[data-theme="dark"] .buyers-tab{--bt-text:#ededef;--bt-text2:#b4b4bb;--bt-head:#1b1b1e;--bt-line:#2b2b30;--bt-border:#3a3a40;--bt-blue:#FF6633;--bt-bulk-bg:rgba(255,102,51,.14);--bt-bulk-text:#FF8A5C;--bt-bulk-border:rgba(255,102,51,.5);--bt-sel:#2b2b30}
-:root[data-theme="dark"] .buyers-tab .chip{background:transparent}
-:root[data-theme="dark"] .buyers-tab .chip.on{background:var(--orange-soft);color:var(--orange)}
-:root[data-theme="dark"] .buyers-tab .bv-tbl select option{background:#212124;color:#ededef}
-:root[data-theme="dark"] .buyers-tab .bv-tbl select[data-tone=green]{background:rgba(60,207,190,.16);border-color:rgba(60,207,190,.5);color:#3CCFBE}
-:root[data-theme="dark"] .buyers-tab .bv-tbl select[data-tone=grey]{background:#2b2b30;border-color:#3a3a40;color:#b4b4bb}
-:root[data-theme="dark"] .buyers-tab .bv-tbl select[data-tone=amber]{background:rgba(255,102,51,.16);border-color:var(--orange-line);color:#FF8A5C}
-:root[data-theme="dark"] .buyers-tab .bv-tbl select[data-tone=red]{background:rgba(255,123,107,.16);border-color:rgba(255,123,107,.5);color:#ff9a8c}
-:root[data-theme="dark"] .buyers-tab .bv-nbox{background:#1b1b1e;border-color:#2b2b30}
-:root[data-theme="dark"] .buyers-tab .bv-nbox.hl{background:rgba(255,102,51,.14)}
-:root[data-theme="dark"] .buyers-tab .bv-ninput{background:#1b1b1e}
-:root[data-theme="dark"] .buyers-tab .bv-nbtn{background:transparent;border-color:var(--orange);color:var(--orange)}
-:root[data-theme="dark"] .buyers-tab .bv-nbtn:disabled{background:#2b2b30;border-color:#3a3a40;color:#6b6b73}
-:root[data-theme="dark"] .buyers-tab .chip.on .bv-dot{box-shadow:0 0 0 2px #212124}
 .buyers-tab .bv-tbl textarea{background:var(--surface2)}
 
 @media (max-width:1000px){
@@ -1474,14 +1461,14 @@ const CHANNEL = { email: 'Email', linkedin: 'LinkedIn', both: 'Email and LinkedI
 const BV_ACTIVE = ['replied', 'teaser_sent_awaiting_reply', 'in_process'];
 const BV_CHIP_ORDER = [...BV_ACTIVE, 'contacted_no_reply', 'not_contacted', 'went_quiet', 'soft_pass_retry', 'passed_do_not_retry', 'exclude'];
 const BV_SUMMARY_ORDER = [...BV_ACTIVE, 'went_quiet', 'soft_pass_retry', 'passed_do_not_retry', 'contacted_no_reply'];
-/* Status colour by HubSpot internal value (Buyers tab only). Any teaser_sent* value is green; blank counts as not_contacted; unknown = neutral. */
+/* Status colour by HubSpot internal value (Buyers tab only). Any teaser_sent* value is teal; blank counts as not_contacted; unknown = neutral. */
 const BV_STATUS_TONE = {
-  replied: 'green', teaser_sent_awaiting_reply: 'green', in_process: 'green',
-  contacted_no_reply: 'grey', not_contacted: 'grey',
-  went_quiet: 'amber', soft_pass_retry: 'amber',
-  passed_do_not_retry: 'red', exclude: 'dark'
+  replied: 'teal', teaser_sent_awaiting_reply: 'teal', in_process: 'teal',
+  contacted_no_reply: 'silver', not_contacted: 'silver',
+  went_quiet: 'orange', soft_pass_retry: 'orange',
+  passed_do_not_retry: 'deep', exclude: 'dark'
 };
-const bvTone = v => !v ? 'grey' : BV_STATUS_TONE[v] || (String(v).startsWith('teaser_sent') ? 'green' : '');
+const bvTone = v => !v ? 'silver' : BV_STATUS_TONE[v] || (String(v).startsWith('teaser_sent') ? 'teal' : '');
 const BV_NOTE_MAX = 2000;
 const BV_TICK = '<svg class="bv-tick" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg>';
 const BV_STAGE_ORDER = ['teaser sent', 'nda', 'data room', 'eoi submitted', 'management meeting', 'loi'];   /* matched on HubSpot's label */
@@ -1638,10 +1625,12 @@ function bvLoadAll() {
 
 /* ---- drawing ---- */
 const BV_PENCIL = '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+const BV_SLOT_DOT = ['#FF6633', '#14B8A6', '#8A8F99'];
 function bvDrawCards() {
-  $('bvCards').innerHTML = bvCodes().map(c => {
+  $('bvCards').innerHTML = bvCodes().map((c, ci) => {
     const L = BV.lists[c], name = bvNameOf(c), sm = bvSlotSummary(c);
     const total = sm ? sm.active + ' active of ' + sm.total : '';
+    const pct = sm && sm.total ? Math.round(sm.active / sm.total * 100) : 0;
     const sum = !sm ? `<div class="bv-sum muted">${({ error: 'Could not load', sfloading: 'Loading Salesforge...', sfoff: 'Salesforge not connected' })[L && L.state] || 'Loading...'}</div>`
       : `<div class="bv-sum">${sm.statuses.length
           ? sm.statuses.map(x => `<button class="bv-count" data-act="sumfilter" data-slot="${c}" data-status="${esc(x.value)}" title="Show only ${esc(x.label)} in the table">${x.n} ${esc(x.label)}</button>`).join('<span class="muted"> · </span>')
@@ -1655,11 +1644,12 @@ function bvDrawCards() {
           <div class="muted">Display name only. ${esc(BV.note || 'Sequences are matched to a slot by the S1, S2 or S3 prefix of their name.')}${BV.persisted ? '' : ' This server is not keeping names between restarts.'}</div></div>`
       : `<button class="bv-pick" data-act="pick" data-slot="${c}" aria-pressed="${c === BV.slot}">
           <b>${name ? esc(name) : '<span class="muted" style="font-weight:400">No mandate name yet</span>'}</b></button>${sum}`;
-    return `<div class="bv-card${c === BV.slot ? ' on' : ''}">
-      <div class="bv-top"><span class="bv-code">${c}</span>
+    return `<div class="bv-card${c === BV.slot ? ' on' : ''}"><div class="bv-mid">
+      <div class="bv-top"><i class="mdot" style="background:${BV_SLOT_DOT[ci % BV_SLOT_DOT.length]}"></i><span class="bv-code">${c}</span>
         <span style="display:flex;align-items:center;gap:6px"><span class="muted">${total}</span>
         <button class="bv-icon" data-act="name-edit" data-slot="${c}" aria-label="Rename the ${c} mandate" title="Rename the ${c} mandate">${BV_PENCIL}</button></span></div>
-      ${body}</div>`;
+      ${body}</div>
+      <div class="ring" role="img" aria-label="${sm ? pct + ' percent active' : 'Not loaded yet'}" style="background:conic-gradient(from -90deg,var(--orange) 0 ${pct}%,var(--line) ${pct}% 100%)"><div><b>${sm && sm.total ? pct + '%' : '\u2013'}</b><small>active</small></div></div></div>`;
   }).join('');
 }
 function bvDrawHead() {
