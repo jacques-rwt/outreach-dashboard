@@ -308,18 +308,19 @@ td select{height:28px;font-size:12px}
 .ow{display:flex;flex-wrap:wrap;gap:24px}
 .ol{flex:999 1 520px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .or{flex:1 1 240px;display:flex;flex-direction:column;gap:14px;justify-content:center}
-.scols{display:flex;align-items:flex-end;gap:5px;height:214px}
+.scols{display:flex;align-items:flex-end;gap:5px;height:128px}
 .scol{all:unset;box-sizing:border-box;flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px;cursor:pointer;min-width:0}
 .scols:hover .scol:not(:hover){opacity:.35}
 .scol:focus-visible{outline:2px solid var(--orange);outline-offset:1px;border-radius:4px}
-.dots{display:flex;flex-direction:column;gap:2px;align-items:center}
-.dots i{width:7px;height:7px;border-radius:50%;border:1.5px solid;box-sizing:border-box}
-.dmore{font-size:10px;color:var(--text3);line-height:1}
+.dots{display:flex;flex-direction:column;gap:3px;align-items:center;position:relative;z-index:1;padding-top:5px}
+.dots i{width:7px;height:7px;border-radius:50%;border:1.5px solid;box-sizing:border-box;box-shadow:0 0 0 1.5px var(--surface)}
+.dmore{font-size:10px;color:var(--text3);line-height:1;text-shadow:0 0 3px var(--surface),0 0 3px var(--surface)}
 .sbar{width:100%;max-width:22px;min-height:3px;border-radius:4px 4px 1px 1px;background:linear-gradient(to top,#E8501F,#FF8A5C)}
 .scol.sel .sbar{outline:1.5px solid var(--orange);outline-offset:1px}
-.refl{display:flex;align-items:flex-start;gap:5px;height:44px;margin-top:-6px}
-.refl div{flex:1;height:100%}
-.refl i{display:block;max-width:22px;margin:0 auto;border-radius:1px 1px 4px 4px;background:linear-gradient(to bottom,#E8501F,#FF8A5C);opacity:.5;-webkit-mask-image:linear-gradient(to bottom,#000,transparent 85%);mask-image:linear-gradient(to bottom,#000,transparent 85%)}
+.refl{display:flex;align-items:flex-start;gap:5px;margin-top:-6px}
+.refl>div{flex:1;min-width:0;min-height:62px;position:relative;cursor:pointer}
+.refl>div.sel .dots{outline:1.5px solid var(--orange);outline-offset:1px;border-radius:6px}
+.refl i.rf{position:absolute;top:0;left:0;right:0;display:block;max-width:22px;margin:0 auto;border-radius:1px 1px 4px 4px;background:linear-gradient(to bottom,#E8501F,#FF8A5C);opacity:.5;-webkit-mask-image:linear-gradient(to bottom,#000,transparent 85%);mask-image:linear-gradient(to bottom,#000,transparent 85%)}
 .xax{display:flex}
 .xax div{flex:1;display:flex;justify-content:space-between;gap:8px;white-space:nowrap;font-size:11px;color:var(--text3)}
 .stats{display:flex;gap:24px;flex-wrap:wrap}
@@ -1091,16 +1092,23 @@ function drawChart() {
   S.chartReplies.filter(r => !r.ooo).forEach(r => { (byDay[bucketDay(r.repliedAt)] ||= []).push(r); });
   $('scols').innerHTML = days.map(d => {
     const sent = d.emailSent + d.linkedinSent, list = byDay[d.date] || [], nb = list.filter(isBuyer).length, sb = buyerSends(d);
-    const dots = list.slice(0, MAX_DOTS).map(r => { const c = dotColor(r); return `<i style="border-color:${c};background:${isBuyer(r) ? 'transparent' : c}"></i>`; }).join('');
+    const dots = list.slice(0, MAX_DOTS).map(r => { const c = dotColor(r); return `<i style="border-color:${c};background:${isBuyer(r) ? 'var(--surface)' : c}"></i>`; }).join('');
     const more = list.length > MAX_DOTS ? `<span class="dmore">+${list.length - MAX_DOTS}</span>` : '';
     const tip = `${fmtDay(d.date)}: ${d.emailSent.toLocaleString()} email · ${d.linkedinSent.toLocaleString()} LinkedIn · ${list.length} ${list.length === 1 ? 'reply' : 'replies'}` + (sb || nb ? ' · ' + buyerLine(sb, nb) : '');
-    return `<button type="button" class="scol${d.date === S.selectedDay ? ' sel' : ''}" data-d="${d.date}" title="${esc(tip)}" aria-label="${esc(tip)}"><div class="dots">${more}${dots}</div><div class="sbar" style="height:${Math.max(3, Math.round(sent / max * BAR_PX))}px"></div></button>`;
+    return `<button type="button" class="scol${d.date === S.selectedDay ? ' sel' : ''}" data-d="${d.date}" title="${esc(tip)}" aria-label="${esc(tip)}"><div class="sbar" style="height:${Math.max(3, Math.round(sent / max * BAR_PX))}px"></div></button>`;
   }).join('');
-  $('refl').innerHTML = days.map(d => `<div><i style="height:${Math.max(3, Math.round((d.emailSent + d.linkedinSent) / max * 100))}%"></i></div>`).join('');
+  /* reflection strip: faded mirror of each bar with that day's reply dots hanging over it, clickable like the bar */
+  $('refl').innerHTML = days.map(d => {
+    const sent = d.emailSent + d.linkedinSent, list = byDay[d.date] || [];
+    const dots = list.slice(0, MAX_DOTS).map(r => { const c = dotColor(r); return `<i style="border-color:${c};background:${isBuyer(r) ? 'var(--surface)' : c}"></i>`; }).join('');
+    const more = list.length > MAX_DOTS ? `<span class="dmore">+${list.length - MAX_DOTS}</span>` : '';
+    return `<div class="rc${d.date === S.selectedDay ? ' sel' : ''}" data-d="${d.date}"><i class="rf" style="height:${Math.max(3, Math.round(sent / max * 56))}px"></i><div class="dots">${more}${dots}</div></div>`;
+  }).join('');
   const k = Math.min(days.length, 5), pts = Array.from({ length: k }, (_, j) => k === 1 ? 0 : Math.round(j * (days.length - 1) / (k - 1)));
   $('xl').innerHTML = days.length ? pts.map(i => `<span>${fmtDay(days[i].date)}</span>`).join('') : '';
 }
 $('scols').addEventListener('click', e => { const b = e.target.closest('.scol'); if (b) selectDay(b.dataset.d); });
+$('refl').addEventListener('click', e => { const b = e.target.closest('.rc'); if (b) selectDay(b.dataset.d); });
 
 /* ================= TALLY, RATES, DONUT, DAY CARD ================= */
 /** Paints both reply-label donuts (Outreach and Home) from [labelKey, count] pairs. */
