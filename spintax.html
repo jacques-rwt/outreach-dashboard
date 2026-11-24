@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Spintax Generator v10</title>
+<title>Spintax Generator v11</title>
 <style>
 :root{--blue:#FF6633;--blue-d:#D9491B;--line:#d5d9e0;--ink:#1d2430;--mute:#667085;--bad:#c62828;--warn:#a85d00;--ok:#1b7f3b}
 *{box-sizing:border-box}
@@ -64,11 +64,20 @@ textarea{min-height:150px;resize:vertical;white-space:pre-wrap}
 .pin #assembled .dark{max-height:150px;overflow-y:auto}
 .chip.cu{border-style:dashed}
 .chip .x{margin-left:6px;color:var(--mute);font-size:11px}
-#cvarForm{display:none;margin-top:8px;align-items:center;gap:6px;flex-wrap:wrap}
-#cvarForm.on{display:flex}
-#cvarForm input{width:170px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;font:12px Consolas,Menlo,monospace}
-#cvarForm .br{font:12px Consolas,Menlo,monospace}
-#cvarErr{color:var(--bad);font-size:12px}
+.vrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:5px}
+.vrow .vchips{display:flex;gap:5px;flex-wrap:wrap}
+.vrow .vnew{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
+.vrow .vform{display:none;align-items:center;gap:5px}
+.vrow .vnew.open .vform{display:inline-flex}
+.vrow .vnew.open .chip.add{display:none}
+.vrow .vname{width:150px;padding:3px 7px;border:1px solid var(--line);border-radius:6px;font:12px Consolas,Menlo,monospace}
+.vrow .br{font:12px Consolas,Menlo,monospace}
+.vrow .verr{color:var(--bad);font-size:12px}
+.chip.add{background:#fff;border-style:dashed;color:var(--blue-d)}
+.chip.csv{background:#eef4ff;border-color:#c6d8fb}
+.sigline{margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sigline label{display:flex;align-items:center;gap:6px;cursor:pointer}
+#assembled .dark .sig{color:#9aa4b2}
 #statusLine{font-weight:600;font-size:14px;margin-bottom:6px}
 #statusLine .go{font-weight:400;font-size:12px;margin-left:8px;color:var(--accent,#2563eb);cursor:pointer;text-decoration:underline}
 #statusLine.ok{color:#15803d}#statusLine.tip{color:#a16207}#statusLine.bad{color:#b91c1c}
@@ -100,7 +109,7 @@ dialog h2{margin-top:12px}
 </head>
 <body>
 <header class="top">
-  <h1>Spintax Generator</h1><span class="ver">v10</span>
+  <h1>Spintax Generator</h1><span class="ver">v11</span>
   <div class="spacer"></div>
   <button data-a="project-open">Open project</button>
   <button data-a="project-save">Save project</button>
@@ -205,6 +214,10 @@ const WORD_NUM_RE = /\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|tw
 /* ===================== platforms and variable names ===================== */
 const BASE_SALESFORGE = ["first_name", "last_name", "company_name", "company_nickname"];
 const BASE_INSTANTLY = ["firstName", "lastName", "companyName", "personalization"];
+/* Sender variables are filled in by the platform from the sending account. They are never chips, CSV columns or custom variables. */
+const SENDER_INSTANTLY = ["accountSignature"];
+const SIG_VAR = "accountSignature";
+const SIGNOFF_RE = /^(best|best regards|kind regards|warm regards|regards|thanks|thank you|many thanks|cheers|sincerely|talk soon|all the best|yours truly|take care)\s*[,.!]?$/i;
 function fidOf(tab) { const t = tab || activeTab(); return (t && t.formatId) || settings.formatId; }
 function styleOf(fid) { return fid === "instantly" ? "instantly" : fid === "custom" ? "custom" : "salesforge"; }
 function baseVars(fid) {
@@ -214,7 +227,11 @@ function baseVars(fid) {
   return BASE_SALESFORGE;
 }
 function vkey(n) { return String(n).toLowerCase().replace(/[^a-z0-9]/g, ""); }
-function knownVars(fid) { return Array.from(new Set(baseVars(fid).concat(settings.vars))); }
+function senderVars(fid) { return styleOf(fid) === "instantly" ? SENDER_INSTANTLY : []; }
+function knownVars(fid) { return Array.from(new Set(baseVars(fid).concat(senderVars(fid), settings.vars))); }
+/* Instantly adds the sending account's signature. On by default for email steps, and a step can switch it off. Salesforge adds its own. */
+function sigAvailable(tab) { const t = tab || activeTab(); return !!t && styleOf(fidOf(t)) === "instantly" && t.channel === "email"; }
+function sigOn(tab) { const t = tab || activeTab(); return sigAvailable(t) && t.sig !== false; }
 /* firstName, first_name and "First Name" are one variable. The output always uses the platform's own spelling. */
 function mapVarName(n, fid) {
   const k = knownVars(fid);
@@ -292,7 +309,7 @@ function registerUnknownVars(tab) {
     if (knownVars(fid).includes(v) || mapVarName(v, fid) !== v) continue;
     settings.vars.push(v); added.push(v);
   }
-  if (added.length) { persist(); renderVarChips(); automap(); say("Added " + added.map(v => "{{" + v + "}}").join(", ") + " as a custom variable. Pick its CSV column in step 3 if you use a CSV."); }
+  if (added.length) { persist(); renderVarRows(); automap(); say("Added " + added.map(v => "{{" + v + "}}").join(", ") + " as a custom variable. Pick its CSV column in step 3 if you use a CSV."); }
   return added;
 }
 function spinsOf(p) { return p.segs.filter(s => s.t === "spin"); }
@@ -450,7 +467,8 @@ function renderSegsColored(p, fmt, idxOf) {
 }
 function assemblePlain(tab, fmt) {
   const subj = tab.paras.filter(p => p.kind === "subject").map(p => renderSegsPlain(p, fmt)).join("");
-  const body = tab.paras.filter(p => p.kind === "body").map(p => renderSegsPlain(p, fmt)).join("\n\n");
+  let body = tab.paras.filter(p => p.kind === "body").map(p => renderSegsPlain(p, fmt)).join("\n\n");
+  if (sigOn(tab) && tab.paras.length) body += (body ? "\n\n" : "") + fmt.varOpen + SIG_VAR + fmt.varClose;
   return { subj, body };
 }
 
@@ -582,8 +600,19 @@ function setBusy(b, msg) {
   busy = b; if (b && msg) $("#status").innerHTML = `<div class="msg">${esc(msg)}</div>`;
   $$("button[data-a]").forEach(x => { if (["run", "suggest", "respin", "review-claude"].includes(x.dataset.a)) x.disabled = b; });
 }
+/* Problems that belong to the whole step, not to one block */
+function tabIssues(tab) {
+  const out = [];
+  if (!tab.paras.length || !sigOn(tab)) return out;
+  const text = tab.paras.map(p => textFor(p, zeroPicks(p))).join(" ");
+  if (varsIn(text).some(v => vkey(v) === vkey(SIG_VAR))) out.push({ lvl: "warn", msg: "The message already contains {{" + SIG_VAR + "}}. The signature is added for you at the end, so remove it from the text or turn off Add signature for this step." });
+  const bodies = tab.paras.filter(p => p.kind === "body"), last = bodies[bodies.length - 1];
+  if (last && textFor(last, zeroPicks(last)).split("\n").some(l => SIGNOFF_RE.test(l.trim()))) out.push({ lvl: "warn", msg: "The message ends with a sign-off such as \"Best,\". Instantly adds the signature as well, so it may send two. Remove the sign-off from the text or turn off Add signature for this step." });
+  return out;
+}
 function counts(tab) {
   let err = 0, warn = 0;
+  tabIssues(tab).forEach(i => i.lvl === "err" ? err++ : warn++);
   for (const p of tab.paras) {
     for (const s of p.segs) {
       if (s.t === "spin") spinIssues(s).forEach(i => i.lvl === "err" ? err++ : warn++);
@@ -612,8 +641,8 @@ function viewOriginal(tab) {
       <button class="small" data-a="sample">Load sample</button>
       <button class="small" data-a="tab-del">Delete step</button>
     </div>
-    ${tab.channel === "email" ? `<label class="f" style="margin-bottom:8px">Subject<input type="text" data-f="subject" value="${esc(tab.subject)}"></label>` : ""}
-    <label class="f">Message (merge fields like [First name] or ${esc("{{firstName}}")} both work, blank line between paragraphs)<textarea data-f="body">${esc(tab.body)}</textarea></label>
+    ${tab.channel === "email" ? `<div style="margin-bottom:8px"><label class="f">Subject<input type="text" data-f="subject" value="${esc(tab.subject)}"></label>${varRow("subject")}</div>` : ""}
+    <div><label class="f">Message (merge fields like [First name] or ${esc("{{firstName}}")} both work, blank line between paragraphs)<textarea data-f="body">${esc(tab.body)}</textarea></label>${varRow("body")}</div>
     <div class="row" style="margin-top:8px">
       <button class="primary" data-a="run">Run Claude</button>
       <button data-a="split">Split only (spin by hand)</button>
@@ -634,7 +663,9 @@ function viewAssembled(tab) {
       <label class="f" style="width:290px">Sending from (output format)<select data-f="format">${opts}</select></label>
       <label class="f" style="flex-direction:row;align-items:center;gap:6px;margin-top:16px"><input type="checkbox" data-f="pad"${settings.pad ? " checked" : ""}> Space inside braces</label>
     </div>
+    <div class="sigline" id="sigLine"></div>
     <div id="fmtNote"></div>
+    <div class="iss" id="tabIssues"></div>
   </div></section>
   <div class="pin" id="pin">
     <div id="statusLine"></div>
@@ -648,31 +679,96 @@ function viewAssembled(tab) {
       <button data-a="review-local">Check all combinations</button>
       <button data-a="review-claude">Ask Claude to review</button>
     </div>
-    <div class="row" style="margin-top:10px"><span class="hint">Insert variable at the cursor:</span><div class="chips" id="varChips"></div><button class="small" data-a="cvar-open">+ Custom</button></div>
-    <div id="cvarForm"><span class="br">{{</span><input type="text" id="cvarName" placeholder="city" autocomplete="off"><span class="br">}}</span><button class="small" data-a="cvar-add">Add</button><button class="small" data-a="cvar-cancel">Cancel</button><span id="cvarErr"></span></div>
   </div>
   <section style="margin-bottom:18px"><div id="issues"></div></section>`;
 }
 
-function renderVarChips() {
-  const box = $("#varChips"); if (!box) return;
-  const base = baseVars(fidOf());
-  box.innerHTML = base.map(v => `<span class="chip" data-a="chip" data-v="${esc(v)}">{{${esc(v)}}}</span>`).join("") +
-    settings.vars.map(v => `<span class="chip cu" data-a="chip" data-v="${esc(v)}">{{${esc(v)}}}<span class="x" data-a="cvar-del" data-v="${esc(v)}" title="Remove this custom variable">x</span></span>`).join("");
+/* ===================== insert variable rows ===================== */
+/* One row under every box where text is typed: subject, message, each spintax block and each paragraph of message text. */
+function varRow(target) {
+  return `<div class="vrow" data-t="${esc(target)}"><span class="hint">Insert:</span><span class="vchips"></span><span class="vnew"><span class="chip add" data-a="vnew-open" title="Create a new variable and insert it">+ New</span><span class="vform"><span class="br">{{</span><input type="text" class="vname" placeholder="city" autocomplete="off"><span class="br">}}</span><button class="small" data-a="vnew-add">Add</button><button class="small" data-a="vnew-cancel">Cancel</button></span><span class="verr"></span></span></div>`;
 }
-function cvarError(msg) { const e = $("#cvarErr"); if (e) e.textContent = msg || ""; }
-function cvarAdd() {
-  const inp = $("#cvarName"); if (!inp) return;
-  const v = inp.value.trim().replace(/^\{\{|\}\}$/g, "");
-  if (!v) { cvarError("Enter a name"); return; }
-  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(v)) { cvarError("Use letters, numbers, and underscores only"); return; }
-  if (knownVars(fidOf()).some(x => vkey(x) === vkey(v))) { cvarError("That variable already exists"); return; }
-  settings.vars.push(v); persist(); inp.value = ""; cvarError(""); renderVarChips(); automap(); renderDerived();
-  say("Added {{" + v + "}}. Use it in any option box.");
+function csvName(h) {
+  let n = String(h).trim().replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  if (/^[0-9]/.test(n)) n = "c_" + n;
+  return n;
 }
-function cvarDel(v) {
-  if (!settings.vars.includes(v)) return;
-  settings.vars = settings.vars.filter(x => x !== v); persist(); renderVarChips(); renderDerived();
+/* CSV columns that no variable is using yet */
+function csvExtras() {
+  const used = new Set(Object.values(contacts.map || {}));
+  return contacts.headers.filter(h => h && !used.has(h) && csvName(h));
+}
+function renderVarRows() {
+  const base = baseVars(fidOf()), extras = csvExtras().slice(0, 8);
+  const html = base.map(v => `<span class="chip" data-a="chip" data-v="${esc(v)}">{{${esc(v)}}}</span>`).join("") +
+    settings.vars.map(v => `<span class="chip cu" data-a="chip" data-v="${esc(v)}">{{${esc(v)}}}</span>`).join("") +
+    extras.map(h => `<span class="chip csv" data-a="chip" data-csv="${esc(h)}" title="CSV column. Click to use it as a variable">${esc(h)}</span>`).join("");
+  $$(".vrow .vchips").forEach(b => { b.innerHTML = html; });
+}
+const caretMemo = new WeakMap();
+let lastFixed = null;           // last focused editable stretch of message text
+/* Which element does a row insert into? */
+function rowTarget(t) {
+  if (t === "subject") return $('[data-f="subject"]');
+  if (t === "body") return $('[data-f="body"]');
+  if (t.startsWith("s:")) {
+    const blk = $(`[data-blk="${t.slice(2)}"]`); if (!blk) return null;
+    if (lastOpt && blk.contains(lastOpt)) return lastOpt;
+    const all = $$("[data-opt]", blk); return all[all.length - 1] || null;
+  }
+  if (t.startsWith("p:")) {
+    const card = $(`[data-para="${t.slice(2)}"]`); if (!card) return null;
+    return lastFixed && card.contains(lastFixed) && document.contains(lastFixed) ? lastFixed : null;
+  }
+  return null;
+}
+function insertVar(v, target) {
+  const t = "{{" + v + "}}";
+  if (target && target.startsWith("p:")) {
+    const el = rowTarget(target);
+    if (el) {
+      el.focus();
+      let ok = false; try { ok = document.execCommand("insertText", false, t); } catch (e) { ok = false; }
+      if (!ok) { el.textContent += t; }
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    }
+    /* nothing focused yet: add the variable to the end of the paragraph's plain text */
+    const p = activeTab().paras.find(x => x.id === target.slice(2)); if (!p) return false;
+    const lastSeg = p.segs[p.segs.length - 1];
+    if (lastSeg && lastSeg.t === "fixed") lastSeg.text += (lastSeg.text && !/\s$/.test(lastSeg.text) ? " " : "") + t; else p.segs.push(fixedSeg((p.segs.length ? " " : "") + t));
+    persist(); renderAll(); return true;
+  }
+  const el = rowTarget(target || "");
+  if (!el) { say("Click inside a box first.", true); return false; }
+  const live = document.activeElement === el, memo = caretMemo.get(el);
+  const i = live && el.selectionStart != null ? el.selectionStart : memo ? memo[0] : el.value.length;
+  const j = live && el.selectionEnd != null ? el.selectionEnd : memo ? memo[1] : i;
+  el.value = el.value.slice(0, i) + t + el.value.slice(j);
+  el.focus(); el.selectionStart = el.selectionEnd = i + t.length;
+  caretMemo.set(el, [i + t.length, i + t.length]);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  return true;
+}
+/* A variable from the typed name, or from a CSV column. Existing names are reused, new ones become custom variables. */
+function ensureVar(name, csvHeader) {
+  const fid = fidOf(), k = knownVars(fid).find(x => vkey(x) === vkey(name));
+  if (k) { if (csvHeader && !contacts.map[k]) contacts.map[k] = csvHeader; return k; }
+  settings.vars.push(name); if (csvHeader) contacts.map[name] = csvHeader;
+  persist(); automap(); renderVarRows(); renderPreview();
+  return name;
+}
+function vnewAdd(row) {
+  const inp = $(".vname", row), err = $(".verr", row);
+  const name = inp.value.trim().replace(/^\{\{|\}\}$/g, "");
+  if (!name) { err.textContent = "Enter a name"; return; }
+  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)) { err.textContent = "Use letters, numbers and underscores only"; return; }
+  if (vkey(name) === vkey(SIG_VAR)) { err.textContent = "The signature is added for you at the end"; return; }
+  const had = knownVars(fidOf()).some(x => vkey(x) === vkey(name));
+  const v = ensureVar(name);
+  inp.value = ""; err.textContent = ""; $(".vnew", row).classList.remove("open");
+  insertVar(v, row.dataset.t);
+  if (!had) say("Added {{" + v + "}} as a variable. Pick its CSV column in step 3 if you use a CSV.");
 }
 
 /* The plain stretches of the message can be edited in place. Chrome and Edge support plaintext-only; other browsers get a plain-text paste handler instead. */
@@ -705,6 +801,7 @@ function viewParas(tab) {
           <button class="small" data-a="unspin" data-s="${s.id}">Unspin</button></div>
         ${optRows}
         <button class="small" data-a="opt-add" data-s="${s.id}">Add option +</button>
+        ${varRow("s:" + s.id)}
         <div class="iss" data-iss="${s.id}"></div>
         <div class="outs" data-outs="${s.id}"></div>
       </div>`;
@@ -718,7 +815,7 @@ function viewParas(tab) {
         <button class="small" data-a="reset-p" data-p="${p.id}">Reset</button></h3>
       ${p.note ? `<div class="warnbox" style="margin-bottom:8px">${esc(p.note)}</div>` : ""}
       <div class="grid2">
-        <div><div class="hint" style="margin-bottom:4px">Message text. Edit it here, or select words and click Spin selected text</div><div class="left">${padStart}${left}${padEnd}</div>
+        <div><div class="hint" style="margin-bottom:4px">Message text. Edit it here, or select words and click Spin selected text</div><div class="left">${padStart}${left}${padEnd}</div>${varRow("p:" + p.id)}
           <div data-pissues="${p.id}" class="iss"></div>${reviewHtml(p)}</div>
         <div>${blocks || '<div class="hint">No spin points in this paragraph. It stays fixed.</div>'}</div>
       </div></div>`;
@@ -735,7 +832,7 @@ function reviewHtml(p) {
 
 function viewPreview(tab) {
   const fidP = fidOf(tab);
-  const used = Array.from(new Set(tab.paras.flatMap(p => p.segs.flatMap(s => varsIn(s.t === "fixed" ? s.text : s.options.join(" ")))).map(v => mapVarName(v, fidP))));
+  const used = Array.from(new Set(tab.paras.flatMap(p => p.segs.flatMap(s => varsIn(s.t === "fixed" ? s.text : s.options.join(" ")))).map(v => mapVarName(v, fidP)))).filter(v => !senderVars(fidP).includes(v));
   const hdrs = contacts.headers;
   const mapRows = used.map(v => `<label class="f" style="width:200px">{{${esc(v)}}} comes from<select data-f="cmap" data-v="${esc(v)}"><option value="">(sample value)</option>${hdrs.map(h => `<option value="${esc(h)}"${contacts.map[v] === h ? " selected" : ""}>${esc(h)}</option>`).join("")}</select></label>`).join("");
   return `<section><h2><span class="n">3</span>Read it as the recipient</h2>
@@ -758,7 +855,7 @@ function viewHelp() {
   const h = [];
   h.push('<div class="help">');
   h.push('<h2 style="font-size:19px;margin-bottom:4px">How to use the Spintax Generator</h2>');
-  h.push('<p>Spintax lets one email go out in many slightly different wordings. This tool helps you write the variations, keeps your facts locked, checks every combination, and gives you text to paste into Salesforge.</p>');
+  h.push('<p>Spintax lets one email go out in many slightly different wordings. This tool helps you write the variations, keeps your facts locked, checks every combination, and gives you text to paste into Instantly or Salesforge.</p>');
 
   h.push('<h3>Quick start</h3><ol>');
   h.push('<li>Sign in to the dashboard and open this tab. Claude runs through the dashboard, so there is no key to paste. It is used by Run Claude, Suggest options and Ask Claude to review.</li>');
@@ -801,7 +898,8 @@ function viewHelp() {
 
   h.push('<h3>Variables</h3><ul>');
   h.push('<li>Variables use double braces and no pipe, like ' + c('{{first_name}}') + ' and ' + c('{{company_nickname}}') + '.</li>');
-  h.push('<li>Click a chip such as ' + c('{{company_nickname}}') + ' in section 4 to insert it at the cursor in an option box.</li>');
+  h.push('<li>Under every box where you type, there is an <b>Insert</b> row. Click a variable to drop it in at the cursor in that box. <b>+ New</b> makes a new variable and inserts it. After you load a CSV, its unused columns show up in the same row.</li>');
+  h.push('<li><b>Instantly:</b> the sending account\'s signature is added at the end of every email step as ' + c('{{accountSignature}}') + '. Untick <b>Add signature</b> in section 2 for a step that should not have one. Salesforge adds its own signature, so nothing is added there.</li>');
   h.push('<li>Pasting ' + c('[Name]') + ' is converted to ' + c('{{first_name}}') + ' automatically. Edit the mapping and the known variable list in <b>Settings</b>.</li>');
   h.push('<li>An unknown name such as ' + c('{{firstname}}') + ' is a red error, because Salesforge rejects names it does not know.</li></ul>');
   h.push('<div class="lbl">A variable inside an option works in Salesforge</div>');
@@ -849,7 +947,7 @@ function renderAll() {
   if (helpOpen) { $("#main").innerHTML = viewHelp(); return; }
   const tab = activeTab();
   $("#main").innerHTML = viewOriginal(tab) + viewAssembled(tab) + viewPreview(tab) + viewParas(tab);
-  renderVarChips();
+  renderVarRows();
   renderDerived();
 }
 
@@ -858,9 +956,17 @@ function renderDerived() {
   const idxOf = new Map(allSpins(tab).map((s, i) => [s.id, i]));
   /* assembled */
   const subj = tab.paras.filter(p => p.kind === "subject").map(p => renderSegsColored(p, fmt, idxOf)).join("");
-  const body = tab.paras.filter(p => p.kind === "body").map(p => renderSegsColored(p, fmt, idxOf)).join('<span class="gap"></span>');
+  const body = tab.paras.filter(p => p.kind === "body").map(p => renderSegsColored(p, fmt, idxOf)).join('<span class="gap"></span>') + (sigOn(tab) && tab.paras.length ? `<span class="gap"></span><span class="sig">${esc(fmt.varOpen + SIG_VAR + fmt.varClose)}</span>` : "");
   const asm = $("#assembled");
   if (asm) asm.innerHTML = tab.paras.length ? `<div class="dark">${tab.channel === "email" && subj ? `<span class="lbl">Subject</span>${subj}<span class="gap"></span>` : ""}<span class="lbl">${tab.channel === "email" ? "Body" : "Message"}</span>${body}</div>` : `<div class="hint">Nothing assembled yet.</div>`;
+  const sg = $("#sigLine");
+  if (sg) {
+    if (sigAvailable(tab)) sg.innerHTML = `<label><input type="checkbox" data-f="sig"${sigOn(tab) ? " checked" : ""}> Add signature</label><span class="hint">Instantly fills in the sending account's signature at the end of the email.</span>`;
+    else if (styleOf(fidOf(tab)) === "salesforge" && tab.channel === "email") sg.innerHTML = `<span class="hint">Salesforge adds the signature automatically, so nothing is added here.</span>`;
+    else sg.innerHTML = "";
+  }
+  const ti = $("#tabIssues");
+  if (ti) ti.innerHTML = tabIssues(tab).map(i => `<div class="${i.lvl}">${esc(i.msg)}</div>`).join("");
   const fn = $("#fmtNote");
   if (fn) fn.innerHTML = fmt.verified ? "" : `<div class="warnbox">This format comes from vendor documentation found by search and has not been tested by you. Paste one step into the tool and check its preview before launching.</div>`;
   /* stats + counts */
@@ -923,7 +1029,8 @@ function renderPreview() {
   const render = p => { let i = 0; return p.segs.map(s => { if (s.t === "fixed") return fill(s.text); const k = prev.picks[s.id]; const idx = (k === undefined || k >= s.options.length) ? 0 : k; return fill(s.options[idx]); }).join(""); };
   const subj = tab.paras.filter(p => p.kind === "subject").map(render).join("");
   const body = tab.paras.filter(p => p.kind === "body").map(render).join("\n\n");
-  box.innerHTML = `<div class="mail">${tab.channel === "email" ? `<div class="subj">Subject: ${subj}</div>` : ""}${body}</div>` +
+  const sigNote = sigOn(tab) ? `\n\n<span class="hint">[Signature from the sending account]</span>` : "";
+  box.innerHTML = `<div class="mail">${tab.channel === "email" ? `<div class="subj">Subject: ${subj}</div>` : ""}${body}${sigNote}</div>` +
     (row ? `<div class="hint" style="margin-top:4px">Contact ${contacts.idx + 1} of ${contacts.rows.length}</div>` : "");
 }
 function shufflePrev() { prev.picks = {}; allSpins(activeTab()).forEach(s => { prev.picks[s.id] = Math.floor(Math.random() * s.options.length); }); }
@@ -969,11 +1076,16 @@ function onClick(e) {
     case "opt-add": { const f = findSpin(el.dataset.s); if (f) { f.s.options.push(""); persist(); renderAll(); const ins = $$(`[data-opt][data-s="${f.s.id}"]`); if (ins.length) ins[ins.length - 1].focus(); } break; }
     case "opt-del": { const f = findSpin(el.dataset.s); if (f) { f.s.options.splice(+el.dataset.i, 1); if (!f.s.options.length) f.s.options.push(f.s.orig); persist(); renderAll(); } break; }
     case "suggest": suggestOptions(el.dataset.s); break;
-    case "chip": insertVar(el.dataset.v); break;
-    case "cvar-open": { const f = $("#cvarForm"); if (f) { f.classList.add("on"); const i = $("#cvarName"); if (i) i.focus(); } break; }
-    case "cvar-cancel": { const f = $("#cvarForm"); if (f) f.classList.remove("on"); cvarError(""); break; }
-    case "cvar-add": cvarAdd(); break;
-    case "cvar-del": cvarDel(el.dataset.v); break;
+    case "chip": {
+      const row = el.closest(".vrow"), target = row ? row.dataset.t : "";
+      const v = el.dataset.csv ? ensureVar(csvName(el.dataset.csv), el.dataset.csv) : el.dataset.v;
+      insertVar(v, target);
+      if (el.dataset.csv) say("Added {{" + v + "}} and linked it to the CSV column \"" + el.dataset.csv + "\".");
+      break;
+    }
+    case "vnew-open": { const row = el.closest(".vrow"); if (row) { $(".vnew", row).classList.add("open"); const i = $(".vname", row); if (i) i.focus(); } break; }
+    case "vnew-cancel": { const row = el.closest(".vrow"); if (row) { $(".vnew", row).classList.remove("open"); $(".verr", row).textContent = ""; $(".vname", row).value = ""; } break; }
+    case "vnew-add": { const row = el.closest(".vrow"); if (row) vnewAdd(row); break; }
     case "plat": { settings.formatId = el.dataset.p; settings.formatAsked = true; persist(); try { $("#platformDlg").close(); } catch (e) { /* ignore */ } renderAll(); automap(); if (el.dataset.p === "custom") openSettings(); break; }
     case "goto-issue": { const t = document.querySelector(".iss .err, .iss .warn, .iss div"); (t || document.querySelector("#issues") || document.body).scrollIntoView({ block: "center" }); break; }
     case "copy": { const o = assemblePlain(tab, getFmt()); copyText(el.dataset.w === "subj" ? o.subj : el.dataset.w === "body" ? o.body : (tab.channel === "email" ? "Subject: " + o.subj + "\n\n" : "") + o.body); break; }
@@ -1000,13 +1112,6 @@ function onClick(e) {
     case "project-save": saveProject(); break;
     case "project-open": $("#fileProject").click(); break;
   }
-}
-function insertVar(v) {
-  if (!lastOpt || !document.contains(lastOpt)) { say("Click inside an option box first.", true); return; }
-  const t = "{{" + v + "}}", i = lastOpt.selectionStart == null ? lastOpt.value.length : lastOpt.selectionStart, j = lastOpt.selectionEnd == null ? i : lastOpt.selectionEnd;
-  lastOpt.value = lastOpt.value.slice(0, i) + t + lastOpt.value.slice(j);
-  lastOpt.selectionStart = lastOpt.selectionEnd = i + t.length; lastOpt.focus();
-  lastOpt.dispatchEvent(new Event("input", { bubbles: true }));
 }
 function spinSelection(pid) {
   const tab = activeTab(), p = tab.paras.find(x => x.id === pid); if (!p) return;
@@ -1048,7 +1153,8 @@ function onChange(e) {
   if (k === "channel") { tab.channel = el.value; if (el.value === "linkedin" && !tab.charLimit) tab.charLimit = 300; if (tab.paras.length) { tab.dirty = true; } persist(); renderAll(); }
   else if (k === "format") { tab.formatId = el.value || null; persist(); renderAll(); automap(); renderPreview(); }
   else if (k === "pad") { settings.pad = el.checked; persist(); renderDerived(); }
-  else if (k === "cmap") { contacts.map[el.dataset.v] = el.value; renderPreview(); }
+  else if (k === "sig") { tab.sig = el.checked ? true : false; persist(); renderDerived(); }
+  else if (k === "cmap") { contacts.map[el.dataset.v] = el.value; renderPreview(); renderVarRows(); }
 }
 
 /* settings dialog */
@@ -1088,7 +1194,7 @@ function resetAll() {
   state = { tabs: [newTab("Email 1A", "email"), newTab("LinkedIn after connect", "linkedin")], active: null };
   state.active = state.tabs[0].id;
   contacts = { headers: [], rows: [], map: {}, idx: 0, name: "" };
-  prev = { picks: {} }; lastOpt = null; helpOpen = false;
+  prev = { picks: {} }; lastOpt = null; lastFixed = null; helpOpen = false;
   try { localStorage.removeItem("spintax_v1_state"); } catch (e) { /* ignore */ }
   persist(); renderAll(); say("Tool reset."); askPlatform();
 }
@@ -1260,18 +1366,25 @@ function loadCsv(file) {
 document.addEventListener("click", onClick);
 document.addEventListener("input", onInput);
 document.addEventListener("paste", e => { const el = e.target; if (el && el.matches && el.matches(".left .fixed")) { e.preventDefault(); const t = (e.clipboardData || window.clipboardData).getData("text"); document.execCommand("insertText", false, t.replace(/\r/g, "")); } });
-document.addEventListener("keydown", e => { if (e.target && e.target.id === "cvarName") { if (e.key === "Enter") { e.preventDefault(); cvarAdd(); } else cvarError(""); } });
+document.addEventListener("keydown", e => {
+  const el = e.target; if (!el || !el.matches || !el.matches(".vname")) return;
+  const row = el.closest(".vrow");
+  if (e.key === "Enter") { e.preventDefault(); vnewAdd(row); }
+  else if (e.key === "Escape") { e.preventDefault(); $(".vnew", row).classList.remove("open"); el.value = ""; $(".verr", row).textContent = ""; }
+  else $(".verr", row).textContent = "";
+});
 function askPlatform() { if (!settings.formatAsked) { try { $("#platformDlg").showModal(); } catch (e) { /* no dialog support */ } } }
 function setHdr() { const h = document.querySelector("header.top"); if (h) document.documentElement.style.setProperty("--hdr", h.offsetHeight + "px"); }
 window.addEventListener("resize", setHdr);
 document.addEventListener("change", onChange);
 document.addEventListener("focusout", e => { const el = e.target; if (el && el.matches && el.matches('[data-f="body"], [data-f="subject"], [data-opt], .left .fixed')) { const n = settings.vars.length; registerUnknownVars(activeTab()); if (settings.vars.length !== n) { renderPreview(); } } });
-document.addEventListener("focusin", e => { if (e.target.matches && e.target.matches("[data-opt]")) lastOpt = e.target; });
+document.addEventListener("focusin", e => { if (!e.target.matches) return; if (e.target.matches("[data-opt]")) lastOpt = e.target; if (e.target.matches(".left .fixed")) lastFixed = e.target; });
+document.addEventListener("focusout", e => { const el = e.target; if (el && el.matches && el.matches('[data-f="body"], [data-f="subject"], [data-opt]') && el.selectionStart != null) caretMemo.set(el, [el.selectionStart, el.selectionEnd]); });
 document.addEventListener("mousedown", e => { if (e.target.closest && e.target.closest(".chip")) e.preventDefault(); });
 $("#fileProject").addEventListener("change", e => { if (e.target.files[0]) openProjectFile(e.target.files[0]); e.target.value = ""; });
 $("#fileCsv").addEventListener("change", e => { if (e.target.files[0]) loadCsv(e.target.files[0]); e.target.value = ""; });
 restore(); shufflePrev(); setHdr(); renderAll(); askParentForKey(); askPlatform();
-window.SPX = { exportSteps, exportHtml, docxBytes, setDashKey, callClaude, exportText, stepReady, get dashKey() { return dashKey; }, get state() { return state; }, get settings() { return settings; }, FORMATS, getFmt, mapVarName, knownVars, baseVars, registerUnknownVars, automap, spinStr, parseSpintaxString, spinIssues, comboIssues, comboTextIssues, numTokens, applyClaudeSegments, buildParas, assemblePlain, totalCombos, paraCombos, textFor, applyPlaceholders, serText, fixedSeg, spinSeg, runClaude, renderAll, activeTab, maxLength };
+window.SPX = { exportSteps, exportHtml, docxBytes, setDashKey, callClaude, exportText, stepReady, get dashKey() { return dashKey; }, get state() { return state; }, get settings() { return settings; }, FORMATS, getFmt, mapVarName, knownVars, baseVars, registerUnknownVars, automap, spinStr, parseSpintaxString, spinIssues, comboIssues, comboTextIssues, numTokens, applyClaudeSegments, buildParas, assemblePlain, sigOn, sigAvailable, tabIssues, insertVar, ensureVar, csvExtras, csvName, renderVarRows, totalCombos, paraCombos, textFor, applyPlaceholders, serText, fixedSeg, spinSeg, runClaude, renderAll, activeTab, maxLength };
 </script>
 </body>
 </html>
