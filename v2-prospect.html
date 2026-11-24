@@ -360,6 +360,9 @@ th{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--text
 .p-lost{background:rgba(184,64,26,.2);color:var(--orange)}
 .chat{display:inline-flex;align-items:center;justify-content:center;width:24px;height:18px;border:1px solid var(--teal-ink);border-radius:4px;background:transparent;color:var(--teal-ink);text-decoration:none;flex:none}
 .chat:hover{background:rgba(15,148,136,.14)}
+.chat.ins{border-color:#2563eb;color:#2563eb}
+.chat.ins:hover{background:rgba(37,99,235,.14)}
+.lt.ins,.lt.ins svg{color:#2563eb}
 .chat-off{display:inline-flex;align-items:center;justify-content:center;width:24px;height:18px;border:1px dashed var(--line2);border-radius:4px;background:transparent;color:var(--text3);flex:none;cursor:default}
 select.int{color:var(--orange);border-color:var(--orange-line)}
 :root[data-theme="dark"] .tag.warn,:root[data-theme="dark"] .bv-flag{border-color:var(--orange-line);color:var(--orange)}
@@ -638,9 +641,11 @@ select.int{color:var(--orange);border-color:var(--orange-line)}
         <button class="btn" id="csvBtn">Export CSV</button>
       </div>
       <div class="chips" id="leadChips"></div>
+      <div class="bv-bar" id="leadBar" hidden></div>
       <div class="tbl-wrap">
         <table>
           <thead><tr>
+            <th style="width:3%"><input type="checkbox" id="leadAll" aria-label="Select all leads shown"></th>
             <th style="width:8%">Replied</th>
             <th style="width:20%">Name</th>
             <th style="width:15%">Sequence</th>
@@ -650,7 +655,7 @@ select.int{color:var(--orange);border-color:var(--orange-line)}
             <th style="width:18%">Follow-up</th>
             <th style="width:4%"></th>
           </tr></thead>
-          <tbody id="leadBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+          <tbody id="leadBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -825,17 +830,25 @@ const dotColor = r => r.channel === 'linkedin' ? '#A3A9B3' : 'var(--text)';
 /* Chat icon: opens the reply's conversation in Salesforge Primebox. No saved thread id: a grey dashed icon that is not a link. Out-of-office replies get none. */
 const CHAT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"></path></svg>';
 const primeboxUrl = threadId => `https://app.salesforge.ai/${CONFIG.salesforgeWorkspaceSlug}/primebox/all/${encodeURIComponent(threadId)}`;
+/* Instantly conversations open in the Instantly Unibox (blue icon); everything else opens in Salesforge Primebox. Only Instantly rows carry source / threadSource from the server. */
+const uniboxUrl = threadId => `https://app.instantly.ai/app/unibox/${encodeURIComponent(threadId)}`;
+function threadLink(src, threadId) {
+  return src === 'instantly'
+    ? { href: uniboxUrl(threadId), cls: 'chat ins', label: 'Open conversation in Instantly' }
+    : { href: primeboxUrl(threadId), cls: 'chat', label: 'Open conversation in Salesforge' };
+}
+const chatAnchor = (src, threadId) => { const t = threadLink(src, threadId); return `<a class="${t.cls}" target="_blank" rel="noopener" href="${esc(t.href)}" aria-label="${t.label}" title="${t.label}">${CHAT_SVG}</a>`; };
 const NO_THREAD = 'No Salesforge conversation saved for this reply.';
 const NO_THREAD_BUYER = 'No Salesforge conversation saved for this reply yet.';
 /* Buyers tab: only on buyers whose contact replied (replied from the server). A reply with no saved conversation: the grey icon. No reply: no icon at all. */
 function bvChat(b) {
   if (!b.replied) return '';
-  if (b.threadId) return `<a class="chat" target="_blank" rel="noopener" href="${esc(primeboxUrl(b.threadId))}" aria-label="Open conversation in Salesforge" title="Open conversation in Salesforge">${CHAT_SVG}</a>`;
+  if (b.threadId) return chatAnchor(b.threadSource, b.threadId);
   return `<span class="chat-off" role="img" aria-label="${NO_THREAD_BUYER}" title="${NO_THREAD_BUYER}">${CHAT_SVG}</span>`;
 }
 function chatIcon(r) {
   if (r.ooo) return '';
-  if (r.threadId) return `<a class="chat" target="_blank" rel="noopener" href="${esc(primeboxUrl(r.threadId))}" aria-label="Open conversation in Salesforge" title="Open conversation in Salesforge">${CHAT_SVG}</a>`;
+  if (r.threadId) return chatAnchor(r.threadSource, r.threadId);
   return `<span class="chat-off" role="img" aria-label="${NO_THREAD}" title="${NO_THREAD}">${CHAT_SVG}</span>`;
 }
 function toast(msg, err) {
@@ -968,6 +981,8 @@ const DEMO = (() => {
   });
   /* demo only: most replies have a saved conversation, some do not (so the grey icon shows) */
   replies.forEach(r => { if (!r.ooo && Number(r.hubspotId) % 4 !== 0) r.threadId = 'mth_demo' + r.hubspotId + (r.buyerSlot || ''); });
+  /* demo only: every third email reply with a conversation is an Instantly one (blue icon, Instantly link) */
+  replies.forEach(r => { if (r.channel === 'email' && !r.ooo && r.threadId && Number(r.hubspotId) % 3 === 0) { r.source = 'instantly'; r.threadSource = 'instantly'; r.threadId = '5f-demo' + r.hubspotId; } });
   const find = id => replies.find(x => x.hubspotId === id);
   /* status is contact-level: both rows of a person carry the same status */
   function mirror(r) { replies.forEach(x => { if (x !== r && x.hubspotId === r.hubspotId) { x.status = r.status; x.wasLead = r.wasLead; } }); }
@@ -1498,6 +1513,61 @@ function statusCell(r) {
   const undo = UNDOABLE.includes(k) && !hasBdDeal(r) ? '<option value="__unlabel">Unlabeled (undo label)</option><option disabled>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500</option>' : '';
   return `<select${k === 'interested' ? ' class="int"' : ''} data-id="${esc(r.hubspotId)}" aria-label="Status for ${esc(r.name)}"${off}>${undo}${head}${opts.map(o => `<option value="${esc(o.value)}"${o.value === k ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}<optgroup label="Pipeline"><option value="prospect">Make prospect ›</option></optgroup></select>`;
 }
+/* Channel cell of the Leads table: an Instantly email gets a blue icon and a tooltip; the rest are unchanged. */
+function leadChannelCell(r) {
+  if (r.channel === 'linkedin') return `<span class="lt">${ICON.linkedin}LinkedIn</span>`;
+  return r.source === 'instantly'
+    ? `<span class="lt ins" title="Email sent from Instantly">${ICON.email}Email</span>`
+    : `<span class="lt">${ICON.email}Email</span>`;
+}
+/* ---- Bulk status for the Leads table (status only). Reconnect Later needs a date and Prospect creates a deal, so neither is offered here. ---- */
+const LB = { checked: new Set(), status: '', busy: false };
+const LB_PACE_MS = 150;
+function leadCheckable(r) {
+  if (!r.hubspotId || !S.contactOpts) return false;
+  const st = STATUS[statusKey(r)];
+  return !(st.group === 'converted' || statusKey(r) === 'opted_out');
+}
+const lbOpts = () => (S.contactOpts || []).filter(o => o.selectable && o.value !== 'prospect' && o.value !== 'not_now');
+/* Select-all and the bar act only on rows that are shown: drop any ticked row a new filter hid. */
+function lbSync(rows) {
+  const ids = new Set(rows.filter(leadCheckable).map(r => r.hubspotId));
+  [...LB.checked].forEach(id => { if (!ids.has(id)) LB.checked.delete(id); });
+  const all = $('leadAll'), n = [...ids].filter(id => LB.checked.has(id)).length;
+  all.checked = ids.size > 0 && n === ids.size; all.indeterminate = n > 0 && n < ids.size;
+  all.disabled = LB.busy || !ids.size;
+  lbDrawBar();
+}
+function lbDrawBar() {
+  const n = LB.checked.size, bar = $('leadBar');
+  bar.hidden = n === 0; if (!n) return;
+  bar.innerHTML = `<b>${n} selected</b><label class="muted" for="lbSel">Set status for all</label>
+    <select id="lbSel"${LB.busy ? ' disabled' : ''}><option value="">Choose a status</option>${lbOpts().map(o => `<option value="${esc(o.value)}"${o.value === LB.status ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>
+    <button class="btn btn-go" data-act="lb-go"${LB.busy || !LB.status ? ' disabled' : ''}>${LB.busy ? 'Saving...' : 'Apply to ' + n}</button>
+    <button class="btn" data-act="lb-clear"${LB.busy ? ' disabled' : ''}>Clear selection</button>`;
+}
+async function lbApply() {
+  const ids = [...LB.checked], status = LB.status;
+  if (!ids.length || !status || LB.busy) return;
+  const label = STATUS[status] ? STATUS[status].label : status;
+  if (!confirm(`Set ${ids.length} lead${ids.length === 1 ? '' : 's'} to "${label}" in HubSpot?`)) return;
+  LB.busy = true; drawLeads();
+  let ok = 0; const failed = [];
+  for (const id of ids) {
+    try {
+      const res = await API.setStatus(id, status, null);
+      rowsOf(id).forEach(r => { r.status = status; if (STATUS[status] && STATUS[status].group !== 'out') r.wasLead = true; if (res && 'nextTask' in res) r.nextTask = res.nextTask; });
+      ok++;
+    } catch (err) { failed.push({ id, msg: err.message }); }
+    await new Promise(r => setTimeout(r, LB_PACE_MS));
+  }
+  LB.busy = false; LB.checked = new Set(failed.map(f => f.id)); if (!failed.length) LB.status = '';
+  if (failed.length) {
+    const names = failed.slice(0, 3).map(f => { const w = rowsOf(f.id)[0]; return w ? w.name : f.id; }).join(', ');
+    toast(`${ok} saved, ${failed.length} failed (${names}${failed.length > 3 ? ', ...' : ''}). The failed rows stay selected. ${failed[0].msg}`, true);
+  } else toast(`Saved to HubSpot: ${ok} lead${ok === 1 ? '' : 's'} set to ${label}`);
+  drawSummary(); drawDay(); drawLeads();
+}
 function drawLeads() {
   if (!S.leadSel) S.leadSel = new Set(presetStatuses('all'));
   const all = leadRows(), counts = {};
@@ -1509,16 +1579,18 @@ function drawLeads() {
   $('leadBody').innerHTML = rows.length ? rows.map(r => {
     const days = daysSince(r.repliedAt), g = groupOf(r), cls = days <= 7 ? 'g' : days <= 21 ? 'a' : 'r';
     return `<tr class="${g === 'out' ? 'dim' : ''}">
+      <td>${leadCheckable(r) ? `<input type="checkbox" data-chk="${esc(r.hubspotId)}" aria-label="Select ${esc(r.name)}"${LB.checked.has(r.hubspotId) ? ' checked' : ''}${LB.busy ? ' disabled' : ''}>` : ''}</td>
       <td>${fmtIso(r.repliedAt)}</td>
       <td><div class="who"><span class="av" style="border-radius:50%">${esc(initials(r.name))}</span><div style="min-width:0"><div>${esc(r.name)}</div><div class="sub">${esc(r.company)}</div>${r._flag ? `<div class="bv-flag">${esc(r._flag)}</div>` : ''}</div></div></td>
       <td title="${esc(r.sequenceName)}">${esc(r.sequenceName)}</td>
-      <td><span class="lt">${ICON[r.channel === 'linkedin' ? 'linkedin' : 'email']}${r.channel === 'linkedin' ? 'LinkedIn' : 'Email'}</span></td>
+      <td>${leadChannelCell(r)}</td>
       <td>${g === 'open' ? `<span class="days ${cls}">${days}d</span>` : ''}</td>
       <td>${statusCell(r)}</td>
       <td>${leadFollowCell(r)}</td>
       <td><span class="hsbox">${chatIcon(r)}${r.hubspotId ? `<a class="hs" target="_blank" rel="noopener" href="https://app.hubspot.com/contacts/${CONFIG.hubspotPortalId}/record/0-1/${encodeURIComponent(r.hubspotId)}" title="Open contact in HubSpot">HS</a>` : ''}</span></td>
     </tr>`;
-  }).join('') : '<tr><td colspan="8" class="empty">No leads match these filters.</td></tr>';
+  }).join('') : '<tr><td colspan="9" class="empty">No leads match these filters.</td></tr>';
+  lbSync(rows);
 }
 $('leadBody').addEventListener('change', async e => {
   const sel = e.target; if (sel.tagName !== 'SELECT') return;
@@ -1526,6 +1598,23 @@ $('leadBody').addEventListener('change', async e => {
   if (next === '__unlabel') { ulOpen(id); return; }
   if (next === 'not_now') { S.pendingReconnect = id; drawLeads(); return; }
   await saveLeadStatus(id, next, null, sel);
+});
+$('leadBody').addEventListener('change', e => {
+  const c = e.target.closest('input[data-chk]'); if (!c || LB.busy) return;
+  c.checked ? LB.checked.add(c.dataset.chk) : LB.checked.delete(c.dataset.chk);
+  lbSync(leadRows().filter(r => S.leadSel.has(statusKey(r))));
+});
+$('leadAll').addEventListener('change', e => {
+  if (LB.busy) return;
+  const rows = leadRows().filter(r => S.leadSel.has(statusKey(r)) && leadCheckable(r));
+  rows.forEach(r => e.target.checked ? LB.checked.add(r.hubspotId) : LB.checked.delete(r.hubspotId));
+  drawLeads();
+});
+$('leadBar').addEventListener('change', e => { if (e.target.id === 'lbSel') { LB.status = e.target.value; lbDrawBar(); } });
+$('leadBar').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.act === 'lb-go') lbApply();
+  if (b.dataset.act === 'lb-clear') { LB.checked.clear(); LB.status = ''; drawLeads(); }
 });
 /* HubSpot search takes a few seconds to see a brand-new deal, so re-fetch until it shows up (about 20 seconds max). */
 async function refreshProspectsUntil(dealId) {
@@ -2189,7 +2278,9 @@ const DEMO_BV = (() => {
     channel, lastTouchAt: days == null ? null : new Date(Date.now() - days * 864e5).toISOString(), hubspotUrl: null,
     statusBlank: status === 'not_contacted' && days == null,   /* enrolled, nothing sent yet: blank in HubSpot, shown as Not Contacted */
     /* demo only: a buyer has replied once it is past Contacted - No Reply; most replies have a saved conversation, every third does not (grey icon) */
-    replied: !['not_contacted', 'contacted_no_reply', 'exclude'].includes(status), threadId: !['not_contacted', 'contacted_no_reply', 'exclude'].includes(status) && n % 3 !== 0 ? 'mth_demobuyer' + n : null
+    replied: !['not_contacted', 'contacted_no_reply', 'exclude'].includes(status), threadId: !['not_contacted', 'contacted_no_reply', 'exclude'].includes(status) && n % 3 !== 0 ? (n % 2 === 0 ? '5f-demobuyer' + n : 'mth_demobuyer' + n) : null,
+    /* demo only: even-numbered buyers with a conversation are Instantly ones (blue icon) */
+    threadSource: !['not_contacted', 'contacted_no_reply', 'exclude'].includes(status) && n % 3 !== 0 && n % 2 === 0 ? 'instantly' : undefined
   });
   const db = { S1: [], S2: [], S3: [] };
   const s1 = [['replied', '', 'Asked for the teaser', 2, 'email'], ['contacted_no_reply', '', '', 5, 'linkedin'], ['in_process', 'nda', 'NDA out for signature', 1, 'email'],
