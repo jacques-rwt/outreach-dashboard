@@ -58,8 +58,8 @@ Spintax tab
   --bg:#f4f4f6; --surface:#ffffff; --surface2:#f1f1f4; --text:#17171a; --text2:#4c4c55; --text3:#6f6f77;
   --line:#e4e4e8; --line2:#d3d3d9; --hover:#ececf0;
   --orange:#E8501F; --orange-soft:rgba(232,80,31,.10); --orange-line:rgba(232,80,31,.5);
-  --teal-ink:#0B7A70; --shadow:0 0 0 1px #e4e4e8, 0 1px 2px rgba(20,20,25,.05);
-  --g-ora:linear-gradient(to top,#E8501F,#FF7A4D); --g-sil:linear-gradient(to top,#767C87,#A3A9B3); --g-teal:linear-gradient(to top,#0F9488,#2CC4B2);
+  --teal-ink:#0B5FA5; --ins:#0281FF; --ins-dark:#02315F; --sf:#7C3AED; --sf-soft:#EDE9FE; --shadow:0 0 0 1px #e4e4e8, 0 1px 2px rgba(20,20,25,.05);
+  --g-ora:linear-gradient(to top,#F97400,#FFC089); --g-sil:linear-gradient(to top,#8E8E8E,#C4C4C4); --g-teal:linear-gradient(to top,#00BED6,#89F1FF);
   --toast:#1f1f23;
   --danger:#c0392b; --radius:8px; --radius-lg:12px;
   --font:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
@@ -71,7 +71,7 @@ Spintax tab
   --bg:#161618; --surface:#212124; --surface2:#1b1b1e; --text:#ededef; --text2:#b4b4bb; --text3:#8b8b93;
   --line:#2b2b30; --line2:#3a3a40; --hover:#2b2b30;
   --orange:#FF6633; --orange-soft:rgba(255,102,51,.14); --orange-line:rgba(255,102,51,.55);
-  --teal-ink:#3CCFBE; --shadow:0 0 0 1px #313136; --toast:#2f2f35; --danger:#ff7b6b;
+  --teal-ink:#89F1FF; --ins:#5AA8FF; --ins-dark:#02315F; --sf:#A78BFA; --sf-soft:rgba(167,139,250,.18); --shadow:0 0 0 1px #313136; --toast:#2f2f35; --danger:#ff7b6b;
   color-scheme:dark;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -272,7 +272,7 @@ td select{height:28px;font-size:12px}
 .bv-tbl tr.sel td{background:var(--hover)}
 .bv-tbl input[type=checkbox],#bvAll{accent-color:var(--orange)}
 .bv-tbl select option{background:var(--surface);color:var(--text);font-weight:400}
-.bv-tbl select[data-tone=teal]{background:linear-gradient(135deg,rgba(15,148,136,.30),rgba(44,196,178,.12));border-color:rgba(44,196,178,.6);color:var(--teal-ink);font-weight:500}
+.bv-tbl select[data-tone=teal]{background:linear-gradient(135deg,rgba(0,190,214,.30),rgba(0,190,214,.12));border-color:rgba(0,190,214,.6);color:var(--teal-ink);font-weight:500}
 .bv-tbl select[data-tone=silver]{background:linear-gradient(135deg,rgba(118,124,135,.28),rgba(163,169,179,.10));border-color:rgba(163,169,179,.6);color:var(--text2)}
 .bv-tbl select[data-tone=orange]{background:linear-gradient(135deg,rgba(232,80,31,.28),rgba(255,122,77,.10));border-color:var(--orange-line);color:var(--orange);font-weight:500}
 .bv-tbl select[data-tone=deep]{background:linear-gradient(135deg,rgba(150,40,10,.45),rgba(232,80,31,.14));border-color:#b8401a;color:var(--orange);font-weight:500}
@@ -351,15 +351,21 @@ th{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--text
 .stale,.noplan{font-size:10px;padding:1px 7px;border:1px solid var(--orange);color:var(--orange);border-radius:999px;margin-left:5px;font-weight:500}
 .over{color:var(--orange);font-weight:500}
 .ji{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;border:none;color:var(--text2);background:var(--line);flex:none}
-.ji.hit{background:#0F9488;color:#fff}
+.ji.hit{background:#00BED6;color:#fff}
 .jsep{width:6px;height:1.5px;background:var(--line2);flex:none}
-.p-open,.p-pros{background:rgba(15,148,136,.16);color:var(--teal-ink)}
-.p-won{background:rgba(15,148,136,.30);color:var(--teal-ink)}
+.p-open,.p-pros{background:rgba(0,190,214,.16);color:var(--teal-ink)}
+.p-won{background:rgba(0,190,214,.30);color:var(--teal-ink)}
 .p-later{background:var(--orange-soft);color:var(--orange)}
 .p-un,.p-src{background:var(--line);color:var(--text2)}
 .p-lost{background:rgba(184,64,26,.2);color:var(--orange)}
 .chat{display:inline-flex;align-items:center;justify-content:center;width:24px;height:18px;border:1px solid var(--teal-ink);border-radius:4px;background:transparent;color:var(--teal-ink);text-decoration:none;flex:none}
-.chat:hover{background:rgba(15,148,136,.14)}
+.chat:hover{background:rgba(0,190,214,.14)}
+.chat{cursor:pointer}
+.chat.sf{border-color:var(--sf);color:var(--sf)}
+.chat.sf:hover{background:var(--sf-soft)}
+.chat.ins{border-color:var(--ins);color:var(--ins)}
+.chat.ins:hover{background:rgba(2,129,255,.14)}
+.lt.ins,.lt.ins svg{color:var(--ins)}
 .chat-off{display:inline-flex;align-items:center;justify-content:center;width:24px;height:18px;border:1px dashed var(--line2);border-radius:4px;background:transparent;color:var(--text3);flex:none;cursor:default}
 select.int{color:var(--orange);border-color:var(--orange-line)}
 :root[data-theme="dark"] .tag.warn,:root[data-theme="dark"] .bv-flag{border-color:var(--orange-line);color:var(--orange)}
@@ -400,7 +406,7 @@ select.int{color:var(--orange);border-color:var(--orange-line)}
 .hc-reps{display:flex;gap:6px;height:56px}
 .hc-reps .lbl{flex:none;width:26px;font-size:10px;color:var(--text3);text-align:right;padding-top:2px}
 .hc-reps .hc-cols{position:static;border-top:1px solid var(--line);align-items:flex-start;flex:1}
-.hc-rb{background:linear-gradient(to bottom,#0F9488,rgba(44,196,178,.45));width:56%;max-width:16px;align-self:center;border-radius:0 0 3px 3px}
+.hc-rb{background:linear-gradient(to bottom,#00BED6,rgba(0,190,214,.45));width:56%;max-width:16px;align-self:center;border-radius:0 0 3px 3px}
 .hc-xax{display:flex;gap:6px}.hc-xax i{flex:none;width:26px}
 .hc-xax div{flex:1;display:flex;justify-content:space-between;gap:8px;white-space:nowrap;font-size:11px;color:var(--text3)}
 /* queue */
@@ -443,6 +449,41 @@ select.int{color:var(--orange);border-color:var(--orange-line)}
   .bv-cards{grid-template-columns:minmax(0,1fr)}
   .top,main{padding-left:16px;padding-right:16px}
 }
+
+/* Message preview panel (right-side slide-in). Provider colours: Instantly --ins, Salesforge --sf. */
+.chat.neutral{border-color:var(--line2);color:var(--text3);background:transparent;padding:0;font:inherit}
+.pv{position:fixed;top:0;right:0;bottom:0;width:min(440px,100vw);background:var(--surface);box-shadow:-1px 0 0 var(--line),-12px 0 32px rgba(20,20,25,.14);display:flex;flex-direction:column;z-index:40}
+.pv[hidden]{display:none}
+.pv-head{padding:18px 20px 14px;border-bottom:1px solid var(--line)}
+.pv-hr{display:flex;align-items:flex-start;gap:12px}
+.pv-name{font-size:16px;font-weight:700;overflow-wrap:anywhere}.pv-co{font-size:13px;color:var(--text2);overflow-wrap:anywhere}
+.pv-x{width:44px;height:44px;margin:-8px -10px 0 0;border:0;background:transparent;color:var(--text2);border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.pv-x:hover{background:var(--hover)}
+.pv-tags{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;margin-top:6px}
+.pv-tag{border-radius:999px;padding:2px 9px;background:var(--surface2);color:var(--text2)}
+.pv-tag.ins{background:#0281FF;color:#fff;font-weight:600}
+.pv-tag.sf{background:var(--sf-soft);color:var(--sf);font-weight:600}
+.pv-chips{padding:12px 20px;border-bottom:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap}
+.pv-chip{min-height:44px;padding:0 14px;border-radius:999px;font-size:13px;font-weight:500;border:1px solid var(--line2);background:var(--surface);color:var(--text);cursor:pointer}
+.pv-chip[aria-pressed=true]{background:var(--text);color:var(--surface);border-color:var(--text)}
+.pv-body{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px;background:var(--bg)}
+.pv-msg{background:var(--surface);border-radius:10px;box-shadow:var(--shadow);padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.pv-msg.auto{opacity:.65}
+.pv-mh{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2)}
+.pv-kind{font-weight:600;padding:2px 8px;border-radius:4px;background:var(--surface2);color:var(--text2)}
+.pv-kind.reply{background:rgba(0,190,214,.18);color:var(--teal-ink)}.pv-kind.sent{background:var(--orange-soft);color:var(--orange)}
+.pv-subj{font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.pv-text{font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.pv-empty{margin:24px 0;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;font-size:13px;color:var(--text2)}
+.pv-empty b{font-size:15px;color:var(--text)}
+.pv-btn{min-height:44px;padding:0 16px;border-radius:8px;border:1px solid var(--line2);background:var(--surface);font-size:13px;font-weight:500;color:var(--text);cursor:pointer}
+.pv-foot{padding:14px 20px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.pv-open{display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:8px;color:#fff;font-size:14px;font-weight:600;text-decoration:none;background:#0281FF}
+.pv-open.sf{background:#7C3AED}
+.pv-open:hover{filter:brightness(.92)}
+.pv-fine{font-size:11px;color:var(--text3);text-align:center}
+.pv button:focus-visible,.pv a:focus-visible{outline:2px solid var(--ins);outline-offset:2px}
+@media (prefers-reduced-motion:no-preference){.pv{animation:pvIn .18s ease-out}@keyframes pvIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}}
 </style>
 </head>
 <body>
@@ -638,9 +679,11 @@ select.int{color:var(--orange);border-color:var(--orange-line)}
         <button class="btn" id="csvBtn">Export CSV</button>
       </div>
       <div class="chips" id="leadChips"></div>
+      <div class="bv-bar" id="leadBar" hidden></div>
       <div class="tbl-wrap">
         <table>
           <thead><tr>
+            <th style="width:3%"><input type="checkbox" id="leadAll" aria-label="Select all leads shown"></th>
             <th style="width:8%">Replied</th>
             <th style="width:20%">Name</th>
             <th style="width:15%">Sequence</th>
@@ -650,7 +693,7 @@ select.int{color:var(--orange);border-color:var(--orange-line)}
             <th style="width:18%">Follow-up</th>
             <th style="width:4%"></th>
           </tr></thead>
-          <tbody id="leadBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+          <tbody id="leadBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -734,6 +777,19 @@ select.int{color:var(--orange);border-color:var(--orange-line)}
     <div class="ul-actions"><button class="btn" id="ulCancel">Cancel</button><button class="btn btn-pri" id="ulGo">Set back to Unlabeled</button></div>
   </div>
 </div>
+
+<aside class="pv" id="pv" role="dialog" aria-modal="false" aria-labelledby="pvName" hidden>
+  <div class="pv-head">
+    <div class="pv-hr">
+      <div style="flex:1;min-width:0"><div class="pv-name" id="pvName"></div><div class="pv-co" id="pvCo"></div></div>
+      <button type="button" class="pv-x" id="pvX" aria-label="Close preview"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg></button>
+    </div>
+    <div class="pv-tags" id="pvTags"></div>
+  </div>
+  <div class="pv-chips" id="pvChips" role="group" aria-label="Message filters"></div>
+  <div class="pv-body" id="pvBody" aria-live="polite"></div>
+  <div class="pv-foot"><a class="pv-open" id="pvOpen" target="_blank" rel="noopener" href="#">Open</a><div class="pv-fine" id="pvFine"></div></div>
+</aside>
 
 <div class="toast" id="toast"></div>
 <div class="toast utoast" id="uToast" role="status" aria-live="polite"></div>
@@ -825,19 +881,97 @@ const dotColor = r => r.channel === 'linkedin' ? '#A3A9B3' : 'var(--text)';
 /* Chat icon: opens the reply's conversation in Salesforge Primebox. No saved thread id: a grey dashed icon that is not a link. Out-of-office replies get none. */
 const CHAT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"></path></svg>';
 const primeboxUrl = threadId => `https://app.salesforge.ai/${CONFIG.salesforgeWorkspaceSlug}/primebox/all/${encodeURIComponent(threadId)}`;
+/* Instantly conversations open in the Instantly Unibox (blue icon); everything else opens in Salesforge Primebox. Only Instantly rows carry source / threadSource from the server. */
+const uniboxUrl = threadId => `https://app.instantly.ai/app/unibox/${encodeURIComponent(threadId)}`;
+function threadLink(src, threadId) {
+  return src === 'instantly'
+    ? { href: uniboxUrl(threadId), cls: 'chat ins', label: 'Open conversation in Instantly' }
+    : { href: primeboxUrl(threadId), cls: 'chat sf', label: 'Open conversation in Salesforge' };
+}
+/* The icon still links to the conversation (middle click, new tab). A plain click opens the preview panel instead; ctx tells the panel who to look up. */
+const pvAttrs = (src, c = {}) => ` data-pv="1" data-pv-email="${esc(c.email || '')}" data-pv-name="${esc(c.name || '')}" data-pv-co="${esc(c.co || '')}" data-pv-kind="${c.kind === 'buyer' ? 'buyer' : 'bd'}" data-pv-slot="${esc(c.slot || '')}" data-pv-seq="${esc(c.seq || '')}" data-pv-src="${src === 'instantly' ? 'instantly' : 'salesforge'}"`;
+const chatAnchor = (src, threadId, ctx) => { const t = threadLink(src, threadId); return `<a class="${t.cls}" target="_blank" rel="noopener" href="${esc(t.href)}" aria-label="${t.label}. Click to preview the messages." title="${t.label}. Click to preview the messages."${ctx && ctx.email ? pvAttrs(src, ctx) : ''}>${CHAT_SVG}</a>`; };
 const NO_THREAD = 'No Salesforge conversation saved for this reply.';
 const NO_THREAD_BUYER = 'No Salesforge conversation saved for this reply yet.';
 /* Buyers tab: only on buyers whose contact replied (replied from the server). A reply with no saved conversation: the grey icon. No reply: no icon at all. */
 function bvChat(b) {
-  if (!b.replied) return '';
-  if (b.threadId) return `<a class="chat" target="_blank" rel="noopener" href="${esc(primeboxUrl(b.threadId))}" aria-label="Open conversation in Salesforge" title="Open conversation in Salesforge">${CHAT_SVG}</a>`;
+  if (!b.replied && !(b.contact && b.contact.email && b.channel)) return '';
+  const ctx = { email: b.contact && b.contact.email, name: b.contact && b.contact.name, co: b.name, kind: 'buyer', slot: BV.slot };
+  if (b.threadId) return chatAnchor(b.threadSource, b.threadId, ctx);
+  if (ctx.email) return `<button type="button" class="chat neutral" aria-label="Preview messages" title="No conversation link saved. Click to preview the messages."${pvAttrs(null, ctx)}>${CHAT_SVG}</button>`;
   return `<span class="chat-off" role="img" aria-label="${NO_THREAD_BUYER}" title="${NO_THREAD_BUYER}">${CHAT_SVG}</span>`;
 }
 function chatIcon(r) {
   if (r.ooo) return '';
-  if (r.threadId) return `<a class="chat" target="_blank" rel="noopener" href="${esc(primeboxUrl(r.threadId))}" aria-label="Open conversation in Salesforge" title="Open conversation in Salesforge">${CHAT_SVG}</a>`;
+  if (r.threadId) return chatAnchor(r.threadSource, r.threadId, { email: r.email, name: r.name, co: r.company, kind: isBuyer(r) ? 'buyer' : 'bd', slot: r.buyerSlot || '', seq: r.sequenceName });
   return `<span class="chat-off" role="img" aria-label="${NO_THREAD}" title="${NO_THREAD}">${CHAT_SVG}</span>`;
 }
+/* ================= MESSAGE PREVIEW PANEL ================= */
+/* Opened by the chat icon. Reads the thread live from the server on click (GET /dashboard/thread); nothing is kept in the page after it closes. */
+const PV = { ctx: null, res: null, state: 'closed', on: { reply: true, sent: false, auto: false }, seq: 0, opener: null };
+const PV_LABEL = { reply: 'Reply', sent: 'Sent', auto: 'Auto-reply' };
+const pvProvName = p => p === 'salesforge' ? 'Salesforge' : 'Instantly';
+const pvWhen = at => new Date(at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+function demoThread(c) {
+  const who = c.email || 'demo@example.com', t = Date.now();
+  return Promise.resolve({ status: 200, body: { provider: c.src === 'salesforge' ? 'salesforge' : 'instantly', counts: { reply: 1, sent: 1, auto: 0 }, messages: [
+    { id: 'd2', kind: 'reply', at: new Date(t - 36e5).toISOString(), subject: 'Re: Demo message', from: who, text: 'Thanks for reaching out. Please send the teaser.' },
+    { id: 'd1', kind: 'sent', at: new Date(t - 3 * 36e5).toISOString(), subject: 'Demo message', from: '', text: 'Is your company looking at acquisitions this year?' }] } });
+}
+function pvClose() {
+  PV.state = 'closed'; PV.res = null; PV.seq++;
+  $('pv').hidden = true; $('pvBody').textContent = '';
+  if (PV.opener && document.contains(PV.opener)) PV.opener.focus();
+  PV.opener = null;
+}
+async function pvOpen(el) {
+  const d = el.dataset;
+  PV.ctx = { email: d.pvEmail, name: d.pvName, co: d.pvCo, kind: d.pvKind, slot: d.pvSlot, seq: d.pvSeq, src: d.pvSrc, href: el.tagName === 'A' ? el.getAttribute('href') : '' };
+  PV.opener = el; PV.res = null; PV.state = 'loading'; PV.on = { reply: true, sent: false, auto: false };
+  const mine = ++PV.seq;
+  $('pv').hidden = false; pvDraw(); $('pvX').focus();
+  try {
+    const r = await API.thread(PV.ctx);
+    if (mine !== PV.seq) return;   // closed or another icon clicked meanwhile
+    PV.res = r; PV.state = r.status === 200 ? 'ready' : 'error';
+  } catch { if (mine !== PV.seq) return; PV.state = 'error'; }
+  pvDraw();
+}
+function pvDraw() {
+  const c = PV.ctx, res = PV.res && PV.res.status === 200 ? PV.res.body : null;
+  const prov = (res && res.provider) || c.src;
+  $('pvName').textContent = c.name || c.email; $('pvCo').textContent = c.co || '';
+  $('pvTags').innerHTML = `<span class="pv-tag ${prov === 'salesforge' ? 'sf' : 'ins'}">${pvProvName(prov)}</span>${c.seq ? `<span class="pv-tag">Campaign: ${esc(c.seq)}</span>` : ''}`;
+  const counts = (res && res.counts) || { reply: 0, sent: 0, auto: 0 };
+  $('pvChips').innerHTML = [['reply', 'Replies'], ['sent', 'Sent'], ['auto', 'Auto-replies']].map(([k, l]) =>
+    `<button type="button" class="pv-chip" data-k="${k}" aria-pressed="${PV.on[k]}">${l} · ${counts[k] || 0}</button>`).join('');
+  const open = $('pvOpen'); open.className = 'pv-open' + (prov === 'salesforge' ? ' sf' : '');
+  open.textContent = `Open in ${pvProvName(prov)}`;
+  open.href = c.href && (c.src === prov) ? c.href : prov === 'salesforge' ? `https://app.salesforge.ai/${CONFIG.salesforgeWorkspaceSlug}/primebox/all` : 'https://app.instantly.ai/app/unibox';
+  $('pvFine').textContent = `Read live from ${pvProvName(prov)} when you open this. Nothing is stored on the dashboard.`;
+  const body = $('pvBody');
+  if (PV.state === 'loading') { body.innerHTML = '<div class="pv-empty">Loading messages...</div>'; return; }
+  if (PV.state === 'error') { body.innerHTML = `<div class="pv-empty"><b>Could not load the messages</b><span>${pvProvName(prov)} did not answer. Try again, or open it there.</span><button type="button" class="pv-btn" data-retry="1">Try again</button></div>`; return; }
+  if (!res.messages.length) { body.innerHTML = `<div class="pv-empty"><b>No emails found</b><span>Nothing for this contact in ${pvProvName(prov)} yet.</span></div>`; return; }
+  const shown = res.messages.filter(m => PV.on[m.kind]);
+  if (!shown.length) {
+    const hidden = []; if (!PV.on.sent && counts.sent) hidden.push(`${counts.sent} sent email${counts.sent > 1 ? 's' : ''}`); if (!PV.on.auto && counts.auto) hidden.push(`${counts.auto} auto-repl${counts.auto > 1 ? 'ies' : 'y'}`);
+    body.innerHTML = `<div class="pv-empty"><b>No replies yet</b><span>${hidden.length ? esc(hidden.join(' and ')) + ' hidden by the current filter.' : 'Nothing to show for this contact.'}</span>${counts.sent && !PV.on.sent ? '<button type="button" class="pv-btn" data-showsent="1">Show sent emails</button>' : ''}</div>`;
+    return;
+  }
+  body.innerHTML = shown.map(m => `<article class="pv-msg${m.kind === 'auto' ? ' auto' : ''}"><div class="pv-mh"><span class="pv-kind ${m.kind}">${PV_LABEL[m.kind]}</span><span>${esc(pvWhen(m.at))}</span></div><div class="pv-subj">${esc(m.subject)}</div><div class="pv-text">${esc(m.text)}</div></article>`).join('');
+}
+document.addEventListener('click', e => {
+  const icon = e.target.closest('[data-pv]');
+  if (icon && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) { e.preventDefault(); pvOpen(icon); return; }
+  if (!e.target.closest('#pv')) return;
+  if (e.target.closest('#pvX')) return pvClose();
+  const chip = e.target.closest('.pv-chip'); if (chip) { PV.on[chip.dataset.k] = !PV.on[chip.dataset.k]; return pvDraw(); }
+  if (e.target.closest('[data-showsent]')) { PV.on.sent = true; return pvDraw(); }
+  if (e.target.closest('[data-retry]')) { const o = PV.opener; if (o) pvOpen(o); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('pv').hidden) pvClose(); });
+
 function toast(msg, err) {
   const t = $('toast'); t.textContent = msg; t.className = 'toast' + (err ? ' err' : ''); t.style.display = 'block';
   clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500);
@@ -868,6 +1002,8 @@ const API = {
   followup: (dealId, dueAt) => S.mode === 'demo' ? DEMO.followup(dealId, dueAt) : api(`/dashboard/deals/${encodeURIComponent(dealId)}/followups`, { method: 'POST', body: JSON.stringify({ dueAt }) }),
   /* Add prospect: both return { status, body } so the server's plain-English reason (blocked, needs confirm) can be shown. */
   searchContacts: q => S.mode === 'demo' ? DEMO.searchContacts(q) : apiRaw(`/dashboard/contacts/search?q=${encodeURIComponent(q)}`),
+  /* GET /dashboard/thread?email&kind&slot -> { status, body: { provider, messages: [{ id, kind: reply|sent|auto, at, subject, from, text }], counts } }. Read live, never stored. */
+  thread: c => S.mode === 'demo' ? demoThread(c) : apiRaw(`/dashboard/thread?email=${encodeURIComponent(c.email)}&kind=${encodeURIComponent(c.kind)}&slot=${encodeURIComponent(c.slot || '')}`),
   addProspect: (contactId, source, confirm) => S.mode === 'demo' ? DEMO.addProspect(contactId, source, confirm) : apiRaw('/dashboard/prospects', { method: 'POST', body: JSON.stringify({ contactId, source, confirm }) })
 };
 /* Like api(), but hands back the status and body instead of throwing, and never logs out on its own. Throws only when the server can't be reached. */
@@ -968,6 +1104,8 @@ const DEMO = (() => {
   });
   /* demo only: most replies have a saved conversation, some do not (so the grey icon shows) */
   replies.forEach(r => { if (!r.ooo && Number(r.hubspotId) % 4 !== 0) r.threadId = 'mth_demo' + r.hubspotId + (r.buyerSlot || ''); });
+  /* demo only: every third email reply with a conversation is an Instantly one (blue icon, Instantly link) */
+  replies.forEach(r => { if (r.channel === 'email' && !r.ooo && r.threadId && Number(r.hubspotId) % 3 === 0) { r.source = 'instantly'; r.threadSource = 'instantly'; r.threadId = '5f-demo' + r.hubspotId; } });
   const find = id => replies.find(x => x.hubspotId === id);
   /* status is contact-level: both rows of a person carry the same status */
   function mirror(r) { replies.forEach(x => { if (x !== r && x.hubspotId === r.hubspotId) { x.status = r.status; x.wasLead = r.wasLead; } }); }
@@ -1079,9 +1217,9 @@ const AP_DEMO_MSG = {
 /* ================= CHART ================= */
 /* Div-based, from the live daily and replies data. One bar per sending day (max 22px wide), one dot per reply above it, a faded reflection below. */
 const BAR_PX = 120, MAX_DOTS = 8;
-const LABEL_COLOR = { interested: '#FF6633', not_now: '#FFA27F', unlabeled: '#14B8A6', ooo: '#7DD3C8', not_interested: '#5B616B', not_a_fit: '#8A8F99',
-  wrong_contact: '#B4B9C2', prospect: '#E8501F', client: '#0F9488', previous_prospect: '#767C87', went_cold: '#A3A9B3', opted_out: '#3A3F47',
-  proposal_sent: '#FF8A5C', past_engagement: '#2CC4B2' };
+const LABEL_COLOR = { interested: '#00BED6', not_now: '#89F1FF', unlabeled: '#F97400', ooo: '#B2B2B2', not_interested: '#474747', not_a_fit: '#C4C4C4',
+  wrong_contact: '#8E8E8E', prospect: '#E8501F', client: '#00BED6', previous_prospect: '#767C87', went_cold: '#A3A9B3', opted_out: '#3A3F47',
+  proposal_sent: '#FF8A5C', past_engagement: '#89F1FF' };
 function selectDay(date) { S.selectedDay = date; drawChart(); drawDay(); }
 function visitsByDay() {
   const out = Object.fromEntries(S.daily.map(d => [d.date, { emailDirect: 0, social: 0, searchAi: 0, other: 0 }]));
@@ -1498,6 +1636,61 @@ function statusCell(r) {
   const undo = UNDOABLE.includes(k) && !hasBdDeal(r) ? '<option value="__unlabel">Unlabeled (undo label)</option><option disabled>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500</option>' : '';
   return `<select${k === 'interested' ? ' class="int"' : ''} data-id="${esc(r.hubspotId)}" aria-label="Status for ${esc(r.name)}"${off}>${undo}${head}${opts.map(o => `<option value="${esc(o.value)}"${o.value === k ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}<optgroup label="Pipeline"><option value="prospect">Make prospect ›</option></optgroup></select>`;
 }
+/* Channel cell of the Leads table: an Instantly email gets a blue icon and a tooltip; the rest are unchanged. */
+function leadChannelCell(r) {
+  if (r.channel === 'linkedin') return `<span class="lt">${ICON.linkedin}LinkedIn</span>`;
+  return r.source === 'instantly'
+    ? `<span class="lt ins" title="Email sent from Instantly">${ICON.email}Email</span>`
+    : `<span class="lt">${ICON.email}Email</span>`;
+}
+/* ---- Bulk status for the Leads table (status only). Reconnect Later needs a date and Prospect creates a deal, so neither is offered here. ---- */
+const LB = { checked: new Set(), status: '', busy: false };
+const LB_PACE_MS = 150;
+function leadCheckable(r) {
+  if (!r.hubspotId || !S.contactOpts) return false;
+  const st = STATUS[statusKey(r)];
+  return !(st.group === 'converted' || statusKey(r) === 'opted_out');
+}
+const lbOpts = () => (S.contactOpts || []).filter(o => o.selectable && o.value !== 'prospect' && o.value !== 'not_now');
+/* Select-all and the bar act only on rows that are shown: drop any ticked row a new filter hid. */
+function lbSync(rows) {
+  const ids = new Set(rows.filter(leadCheckable).map(r => r.hubspotId));
+  [...LB.checked].forEach(id => { if (!ids.has(id)) LB.checked.delete(id); });
+  const all = $('leadAll'), n = [...ids].filter(id => LB.checked.has(id)).length;
+  all.checked = ids.size > 0 && n === ids.size; all.indeterminate = n > 0 && n < ids.size;
+  all.disabled = LB.busy || !ids.size;
+  lbDrawBar();
+}
+function lbDrawBar() {
+  const n = LB.checked.size, bar = $('leadBar');
+  bar.hidden = n === 0; if (!n) return;
+  bar.innerHTML = `<b>${n} selected</b><label class="muted" for="lbSel">Set status for all</label>
+    <select id="lbSel"${LB.busy ? ' disabled' : ''}><option value="">Choose a status</option>${lbOpts().map(o => `<option value="${esc(o.value)}"${o.value === LB.status ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>
+    <button class="btn btn-go" data-act="lb-go"${LB.busy || !LB.status ? ' disabled' : ''}>${LB.busy ? 'Saving...' : 'Apply to ' + n}</button>
+    <button class="btn" data-act="lb-clear"${LB.busy ? ' disabled' : ''}>Clear selection</button>`;
+}
+async function lbApply() {
+  const ids = [...LB.checked], status = LB.status;
+  if (!ids.length || !status || LB.busy) return;
+  const label = STATUS[status] ? STATUS[status].label : status;
+  if (!confirm(`Set ${ids.length} lead${ids.length === 1 ? '' : 's'} to "${label}" in HubSpot?`)) return;
+  LB.busy = true; drawLeads();
+  let ok = 0; const failed = [];
+  for (const id of ids) {
+    try {
+      const res = await API.setStatus(id, status, null);
+      rowsOf(id).forEach(r => { r.status = status; if (STATUS[status] && STATUS[status].group !== 'out') r.wasLead = true; if (res && 'nextTask' in res) r.nextTask = res.nextTask; });
+      ok++;
+    } catch (err) { failed.push({ id, msg: err.message }); }
+    await new Promise(r => setTimeout(r, LB_PACE_MS));
+  }
+  LB.busy = false; LB.checked = new Set(failed.map(f => f.id)); if (!failed.length) LB.status = '';
+  if (failed.length) {
+    const names = failed.slice(0, 3).map(f => { const w = rowsOf(f.id)[0]; return w ? w.name : f.id; }).join(', ');
+    toast(`${ok} saved, ${failed.length} failed (${names}${failed.length > 3 ? ', ...' : ''}). The failed rows stay selected. ${failed[0].msg}`, true);
+  } else toast(`Saved to HubSpot: ${ok} lead${ok === 1 ? '' : 's'} set to ${label}`);
+  drawSummary(); drawDay(); drawLeads();
+}
 function drawLeads() {
   if (!S.leadSel) S.leadSel = new Set(presetStatuses('all'));
   const all = leadRows(), counts = {};
@@ -1509,16 +1702,18 @@ function drawLeads() {
   $('leadBody').innerHTML = rows.length ? rows.map(r => {
     const days = daysSince(r.repliedAt), g = groupOf(r), cls = days <= 7 ? 'g' : days <= 21 ? 'a' : 'r';
     return `<tr class="${g === 'out' ? 'dim' : ''}">
+      <td>${leadCheckable(r) ? `<input type="checkbox" data-chk="${esc(r.hubspotId)}" aria-label="Select ${esc(r.name)}"${LB.checked.has(r.hubspotId) ? ' checked' : ''}${LB.busy ? ' disabled' : ''}>` : ''}</td>
       <td>${fmtIso(r.repliedAt)}</td>
       <td><div class="who"><span class="av" style="border-radius:50%">${esc(initials(r.name))}</span><div style="min-width:0"><div>${esc(r.name)}</div><div class="sub">${esc(r.company)}</div>${r._flag ? `<div class="bv-flag">${esc(r._flag)}</div>` : ''}</div></div></td>
       <td title="${esc(r.sequenceName)}">${esc(r.sequenceName)}</td>
-      <td><span class="lt">${ICON[r.channel === 'linkedin' ? 'linkedin' : 'email']}${r.channel === 'linkedin' ? 'LinkedIn' : 'Email'}</span></td>
+      <td>${leadChannelCell(r)}</td>
       <td>${g === 'open' ? `<span class="days ${cls}">${days}d</span>` : ''}</td>
       <td>${statusCell(r)}</td>
       <td>${leadFollowCell(r)}</td>
       <td><span class="hsbox">${chatIcon(r)}${r.hubspotId ? `<a class="hs" target="_blank" rel="noopener" href="https://app.hubspot.com/contacts/${CONFIG.hubspotPortalId}/record/0-1/${encodeURIComponent(r.hubspotId)}" title="Open contact in HubSpot">HS</a>` : ''}</span></td>
     </tr>`;
-  }).join('') : '<tr><td colspan="8" class="empty">No leads match these filters.</td></tr>';
+  }).join('') : '<tr><td colspan="9" class="empty">No leads match these filters.</td></tr>';
+  lbSync(rows);
 }
 $('leadBody').addEventListener('change', async e => {
   const sel = e.target; if (sel.tagName !== 'SELECT') return;
@@ -1526,6 +1721,23 @@ $('leadBody').addEventListener('change', async e => {
   if (next === '__unlabel') { ulOpen(id); return; }
   if (next === 'not_now') { S.pendingReconnect = id; drawLeads(); return; }
   await saveLeadStatus(id, next, null, sel);
+});
+$('leadBody').addEventListener('change', e => {
+  const c = e.target.closest('input[data-chk]'); if (!c || LB.busy) return;
+  c.checked ? LB.checked.add(c.dataset.chk) : LB.checked.delete(c.dataset.chk);
+  lbSync(leadRows().filter(r => S.leadSel.has(statusKey(r))));
+});
+$('leadAll').addEventListener('change', e => {
+  if (LB.busy) return;
+  const rows = leadRows().filter(r => S.leadSel.has(statusKey(r)) && leadCheckable(r));
+  rows.forEach(r => e.target.checked ? LB.checked.add(r.hubspotId) : LB.checked.delete(r.hubspotId));
+  drawLeads();
+});
+$('leadBar').addEventListener('change', e => { if (e.target.id === 'lbSel') { LB.status = e.target.value; lbDrawBar(); } });
+$('leadBar').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.act === 'lb-go') lbApply();
+  if (b.dataset.act === 'lb-clear') { LB.checked.clear(); LB.status = ''; drawLeads(); }
 });
 /* HubSpot search takes a few seconds to see a brand-new deal, so re-fetch until it shows up (about 20 seconds max). */
 async function refreshProspectsUntil(dealId) {
@@ -1763,7 +1975,7 @@ function bvLoadAll() {
 
 /* ---- drawing ---- */
 const BV_PENCIL = '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
-const BV_SLOT_DOT = ['#FF6633', '#14B8A6', '#8A8F99'];
+const BV_SLOT_DOT = ['#F97400', '#00BED6', '#8E8E8E'];
 function bvDrawCards() {
   $('bvCards').innerHTML = bvCodes().map((c, ci) => {
     const L = BV.lists[c], name = bvNameOf(c), sm = bvSlotSummary(c);
@@ -2189,7 +2401,9 @@ const DEMO_BV = (() => {
     channel, lastTouchAt: days == null ? null : new Date(Date.now() - days * 864e5).toISOString(), hubspotUrl: null,
     statusBlank: status === 'not_contacted' && days == null,   /* enrolled, nothing sent yet: blank in HubSpot, shown as Not Contacted */
     /* demo only: a buyer has replied once it is past Contacted - No Reply; most replies have a saved conversation, every third does not (grey icon) */
-    replied: !['not_contacted', 'contacted_no_reply', 'exclude'].includes(status), threadId: !['not_contacted', 'contacted_no_reply', 'exclude'].includes(status) && n % 3 !== 0 ? 'mth_demobuyer' + n : null
+    replied: !['not_contacted', 'contacted_no_reply', 'exclude'].includes(status), threadId: !['not_contacted', 'contacted_no_reply', 'exclude'].includes(status) && n % 3 !== 0 ? (n % 2 === 0 ? '5f-demobuyer' + n : 'mth_demobuyer' + n) : null,
+    /* demo only: even-numbered buyers with a conversation are Instantly ones (blue icon) */
+    threadSource: !['not_contacted', 'contacted_no_reply', 'exclude'].includes(status) && n % 3 !== 0 && n % 2 === 0 ? 'instantly' : undefined
   });
   const db = { S1: [], S2: [], S3: [] };
   const s1 = [['replied', '', 'Asked for the teaser', 2, 'email'], ['contacted_no_reply', '', '', 5, 'linkedin'], ['in_process', 'nda', 'NDA out for signature', 1, 'email'],
