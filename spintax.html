@@ -476,12 +476,13 @@ function assemblePlain(tab, fmt) {
 /* No Claude key ever reaches the browser. Every Claude call goes to the dashboard server, which owns the
    prompts, the model and the limits. The page only says which kind of call it wants and sends the text to work on. */
 const SPINTAX_CONFIG = Object.assign({ apiBase: "https://outreach-sync-production.up.railway.app", path: "/dashboard/spintax/claude" }, window.SPINTAX_CONFIG || {});
+let dashUser = '';             // the person's email, handed over with the password
 let dashKey = null;            // the dashboard password, handed over by the dashboard page (never stored here)
 function setDashKey(k) { dashKey = k ? String(k) : null; }
 window.addEventListener("message", e => {
   if (e.origin !== window.location.origin || e.source !== window.parent) return;
   const m = e.data;
-  if (m && m.type === "spintax-key" && typeof m.key === "string") { setDashKey(m.key); if (typeof say === "function") say("Connected to the dashboard."); }
+  if (m && m.type === "spintax-key" && typeof m.key === "string") { dashUser = typeof m.user === "string" ? m.user : ""; setDashKey(m.key); if (typeof say === "function") say("Connected to the dashboard."); }
 });
 function askParentForKey() {
   if (window.parent && window.parent !== window) window.parent.postMessage({ type: "spintax-ready" }, window.location.origin);
@@ -499,7 +500,7 @@ async function callClaude(kind, payload) {
   try {
     res = await fetch(SPINTAX_CONFIG.apiBase + SPINTAX_CONFIG.path, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-dashboard-key": dashKey },
+      headers: { "content-type": "application/json", "x-dashboard-key": dashKey, ...(dashUser ? { "x-dashboard-user": dashUser } : {}) },
       body: JSON.stringify({ kind, payload })
     });
   } catch (e) { throw new Error("Can't reach the server. Nothing was changed."); }
