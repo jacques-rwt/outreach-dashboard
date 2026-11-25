@@ -472,6 +472,7 @@ select.int{color:var(--orange);border-color:var(--orange-line)}
 .pv-mh{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2)}
 .pv-kind{font-weight:600;padding:2px 8px;border-radius:4px;background:var(--surface2);color:var(--text2)}
 .pv-kind.reply{background:rgba(0,190,214,.18);color:var(--teal-ink)}.pv-kind.sent{background:var(--orange-soft);color:var(--orange)}
+.pv-ch{font-weight:600;padding:2px 8px;border-radius:4px;background:#474747;color:#fff}
 .pv-subj{font-size:13px;font-weight:600;overflow-wrap:anywhere}
 .pv-text{font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .pv-empty{margin:24px 0;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;font-size:13px;color:var(--text2)}
@@ -914,9 +915,10 @@ const pvProvName = p => p === 'salesforge' ? 'Salesforge' : 'Instantly';
 const pvWhen = at => new Date(at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 function demoThread(c) {
   const who = c.email || 'demo@example.com', t = Date.now();
-  return Promise.resolve({ status: 200, body: { provider: c.src === 'salesforge' ? 'salesforge' : 'instantly', counts: { reply: 1, sent: 1, auto: 0 }, messages: [
+  return Promise.resolve({ status: 200, body: { provider: c.src === 'salesforge' ? 'salesforge' : 'instantly', counts: { reply: c.src === 'salesforge' ? 2 : 1, sent: 1, auto: 0 }, messages: [
     { id: 'd2', kind: 'reply', at: new Date(t - 36e5).toISOString(), subject: 'Re: Demo message', from: who, text: 'Thanks for reaching out. Please send the teaser.' },
-    { id: 'd1', kind: 'sent', at: new Date(t - 3 * 36e5).toISOString(), subject: 'Demo message', from: '', text: 'Is your company looking at acquisitions this year?' }] } });
+    { id: 'd1', kind: 'sent', at: new Date(t - 3 * 36e5).toISOString(), subject: 'Demo message', from: '', text: 'Is your company looking at acquisitions this year?' }]
+    .concat(c.src === 'salesforge' ? [{ id: 'd3', kind: 'reply', channel: 'linkedin', at: new Date(t - 2 * 36e5).toISOString(), subject: '', from: '', text: 'Thanks, not interested in selling right now.' }] : []) } });
 }
 function pvClose() {
   PV.state = 'closed'; PV.res = null; PV.seq++;
@@ -946,20 +948,21 @@ function pvDraw() {
   $('pvChips').innerHTML = [['reply', 'Replies'], ['sent', 'Sent'], ['auto', 'Auto-replies']].map(([k, l]) =>
     `<button type="button" class="pv-chip" data-k="${k}" aria-pressed="${PV.on[k]}">${l} · ${counts[k] || 0}</button>`).join('');
   const open = $('pvOpen'); open.className = 'pv-open' + (prov === 'salesforge' ? ' sf' : '');
-  open.textContent = `Open in ${pvProvName(prov)}`;
+  const hasLi = !!(res && res.messages.some(m => m.channel === 'linkedin'));
+  open.textContent = hasLi ? 'Reply in Salesforge' : `Open in ${pvProvName(prov)}`;
   open.href = c.href && (c.src === prov) ? c.href : prov === 'salesforge' ? `https://app.salesforge.ai/${CONFIG.salesforgeWorkspaceSlug}/primebox/all` : 'https://app.instantly.ai/app/unibox';
-  $('pvFine').textContent = `Read live from ${pvProvName(prov)} when you open this. Nothing is stored on the dashboard.`;
+  $('pvFine').textContent = hasLi ? 'LinkedIn replies can only be sent from Salesforge. This opens the same conversation. Read live when you open this, nothing is stored here.' : `Read live from ${pvProvName(prov)} when you open this. Nothing is stored on the dashboard.`;
   const body = $('pvBody');
   if (PV.state === 'loading') { body.innerHTML = '<div class="pv-empty">Loading messages...</div>'; return; }
   if (PV.state === 'error') { body.innerHTML = `<div class="pv-empty"><b>Could not load the messages</b><span>${pvProvName(prov)} did not answer. Try again, or open it there.</span><button type="button" class="pv-btn" data-retry="1">Try again</button></div>`; return; }
-  if (!res.messages.length) { body.innerHTML = `<div class="pv-empty"><b>No emails found</b><span>Nothing for this contact in ${pvProvName(prov)} yet.</span></div>`; return; }
+  if (!res.messages.length) { body.innerHTML = `<div class="pv-empty"><b>No messages found</b><span>Nothing for this contact in ${pvProvName(prov)} yet.</span></div>`; return; }
   const shown = res.messages.filter(m => PV.on[m.kind]);
   if (!shown.length) {
-    const hidden = []; if (!PV.on.sent && counts.sent) hidden.push(`${counts.sent} sent email${counts.sent > 1 ? 's' : ''}`); if (!PV.on.auto && counts.auto) hidden.push(`${counts.auto} auto-repl${counts.auto > 1 ? 'ies' : 'y'}`);
-    body.innerHTML = `<div class="pv-empty"><b>No replies yet</b><span>${hidden.length ? esc(hidden.join(' and ')) + ' hidden by the current filter.' : 'Nothing to show for this contact.'}</span>${counts.sent && !PV.on.sent ? '<button type="button" class="pv-btn" data-showsent="1">Show sent emails</button>' : ''}</div>`;
+    const hidden = []; if (!PV.on.sent && counts.sent) hidden.push(`${counts.sent} sent message${counts.sent > 1 ? 's' : ''}`); if (!PV.on.auto && counts.auto) hidden.push(`${counts.auto} auto-repl${counts.auto > 1 ? 'ies' : 'y'}`);
+    body.innerHTML = `<div class="pv-empty"><b>No replies yet</b><span>${hidden.length ? esc(hidden.join(' and ')) + ' hidden by the current filter.' : 'Nothing to show for this contact.'}</span>${counts.sent && !PV.on.sent ? '<button type="button" class="pv-btn" data-showsent="1">Show sent messages</button>' : ''}</div>`;
     return;
   }
-  body.innerHTML = shown.map(m => `<article class="pv-msg${m.kind === 'auto' ? ' auto' : ''}"><div class="pv-mh"><span class="pv-kind ${m.kind}">${PV_LABEL[m.kind]}</span><span>${esc(pvWhen(m.at))}</span></div><div class="pv-subj">${esc(m.subject)}</div><div class="pv-text">${esc(m.text)}</div></article>`).join('');
+  body.innerHTML = shown.map(m => `<article class="pv-msg${m.kind === 'auto' ? ' auto' : ''}"><div class="pv-mh"><span class="pv-kind ${m.kind}">${PV_LABEL[m.kind]}</span>${m.channel === 'linkedin' ? '<span class="pv-ch">LinkedIn</span>' : ''}<span>${esc(pvWhen(m.at))}</span></div>${m.subject ? `<div class="pv-subj">${esc(m.subject)}</div>` : ''}<div class="pv-text">${esc(m.text)}</div></article>`).join('');
 }
 document.addEventListener('click', e => {
   const icon = e.target.closest('[data-pv]');
