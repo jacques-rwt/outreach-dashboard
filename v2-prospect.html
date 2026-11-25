@@ -454,6 +454,7 @@ select.int{color:var(--orange);border-color:var(--orange-line)}
   <div class="gate-card">
     <h1>RWT Outreach</h1>
     <p>Email and LinkedIn outbound</p>
+    <input type="email" id="email" placeholder="Email" autocomplete="username" style="margin-bottom:10px">
     <input type="password" id="pw" placeholder="Password" autocomplete="current-password">
     <label style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:var(--text-2);margin:0 0 12px;cursor:pointer">
       <input type="checkbox" id="remember" checked style="width:16px;height:16px;margin:0"> Keep me signed in on this computer
@@ -777,7 +778,7 @@ const SOURCE = { outbound_email: 'Outbound: email', outbound_linkedin: 'Outbound
   inbound_website: 'Inbound: website', inbound_referral: 'Inbound: referral', event: 'Event', other: 'Other' };
 
 /* ================= STATE ================= */
-const S = {
+const S = { user: '',
   mode: 'demo', key: null,
   daily: [], chartReplies: [], tableReplies: [], stages: [], deals: [],
   selectedDay: null, leadSel: null, proSel: null, pendingLong: null, pendingReconnect: null,
@@ -859,8 +860,10 @@ const stageById = id => S.stages.find(s => s.id === String(id));
 const isParked = st => !!st && st.kind === 'open' && /long.?term/i.test(st.label);
 
 /* ================= API ================= */
+/* Every call carries the person's email (when they signed in with one) and their own password. */
+const authHeaders = () => ({ 'x-dashboard-key': S.key, ...(S.user ? { 'x-dashboard-user': S.user } : {}) });
 async function api(path, opts = {}) {
-  const r = await fetch(CONFIG.apiBase + path, { ...opts, headers: { 'Content-Type': 'application/json', 'x-dashboard-key': S.key, ...(opts.headers || {}) } });
+  const r = await fetch(CONFIG.apiBase + path, { ...opts, headers: { 'Content-Type': 'application/json', ...authHeaders(), ...(opts.headers || {}) } });
   if (r.status === 401) { logout(); throw new Error('Session expired. Log in again.'); }
   if (r.status === 409) throw new Error('This contact has opted out and can\'t be changed here.');
   if (!r.ok) throw new Error('Server error ' + r.status);
@@ -886,7 +889,7 @@ const API = {
 /* Like api(), but hands back the status and body instead of throwing, and never logs out on its own. Throws only when the server can't be reached. */
 async function apiRaw(path, opts = {}) {
   let r;
-  try { r = await fetch(CONFIG.apiBase + path, { ...opts, headers: { 'Content-Type': 'application/json', 'x-dashboard-key': S.key, ...(opts.headers || {}) } }); }
+  try { r = await fetch(CONFIG.apiBase + path, { ...opts, headers: { 'Content-Type': 'application/json', ...authHeaders(), ...(opts.headers || {}) } }); }
   catch { throw new Error("Can't reach the server. Nothing was changed."); }
   let body = {}; try { body = await r.json() || {}; } catch {}
   return { status: r.status, body };
@@ -2484,31 +2487,35 @@ async function refreshAll() {
 
 /* ================= LOGIN ================= */
 const SAVED_KEY = 'rwt_outreach_key';
+const SAVED_USER = 'rwt_outreach_user';
 const saved = {
   get() { try { return localStorage.getItem(SAVED_KEY); } catch { return null; } },
-  set(v) { try { localStorage.setItem(SAVED_KEY, v); } catch {} },
-  clear() { try { localStorage.removeItem(SAVED_KEY); } catch {} }
+  user() { try { return localStorage.getItem(SAVED_USER) || ''; } catch { return ''; } },
+  set(v, u) { try { localStorage.setItem(SAVED_KEY, v); localStorage.setItem(SAVED_USER, u || ''); } catch {} },
+  clear() { try { localStorage.removeItem(SAVED_KEY); localStorage.removeItem(SAVED_USER); } catch {} }
 };
-async function tryKey(pw) {
-  const r = await fetch(CONFIG.apiBase + '/dashboard/ping', { headers: { 'x-dashboard-key': pw } });
-  if (r.status === 401) throw new Error('Wrong password.');
+async function tryKey(pw, user) {
+  const r = await fetch(CONFIG.apiBase + '/dashboard/ping', { headers: { 'x-dashboard-key': pw, ...(user ? { 'x-dashboard-user': user } : {}) } });
+  if (r.status === 401) throw new Error('Wrong email or password.');
   if (r.status === 429) throw new Error('Too many tries. Wait 15 minutes and try again.');
   if (!r.ok) throw new Error('Server error ' + r.status + '.');
 }
 async function login() {
   const pw = $('pw').value.trim();
+  const user = $('email').value.trim().toLowerCase();
   if (!pw) { $('gateErr').textContent = 'Enter the password.'; return; }
   $('gateErr').textContent = ''; $('loginBtn').disabled = true;
-  try { await tryKey(pw); S.key = pw; S.mode = 'live'; if ($('remember').checked) saved.set(pw); else saved.clear(); start(); }
-  catch (err) { S.key = null; $('gateErr').textContent = err.message === 'Failed to fetch' ? "Can't reach the server." : err.message; }
+  try { await tryKey(pw, user); S.key = pw; S.user = user; S.mode = 'live'; if ($('remember').checked) saved.set(pw, user); else saved.clear(); start(); }
+  catch (err) { S.key = null; S.user = ''; $('gateErr').textContent = err.message === 'Failed to fetch' ? "Can't reach the server." : err.message; }
   finally { $('loginBtn').disabled = false; }
 }
 async function autoLogin() {
   const pw = saved.get(); if (!pw) return;
+  const user = saved.user(); $('email').value = user;
   $('gateErr').textContent = 'Signing you in...';
-  try { await tryKey(pw); S.key = pw; S.mode = 'live'; $('gateErr').textContent = ''; start(); }
+  try { await tryKey(pw, user); S.key = pw; S.user = user; S.mode = 'live'; $('gateErr').textContent = ''; start(); }
   catch (err) {
-    if (err.message === 'Wrong password.') { saved.clear(); $('gateErr').textContent = 'The password has changed. Enter the new one.'; }
+    if (err.message === 'Wrong email or password.') { saved.clear(); $('gateErr').textContent = 'Your sign-in has changed. Enter your email and password again.'; }
     else $('gateErr').textContent = err.message === 'Failed to fetch' ? "Can't reach the server. Try again in a minute." : err.message;
   }
 }
@@ -2521,7 +2528,7 @@ function start() {
   refreshAll();
   if (CONFIG.autoRefreshMinutes > 0) S.timer = setInterval(refreshAll, CONFIG.autoRefreshMinutes * 60000);
 }
-function logout() { saved.clear(); S.key = null; clearInterval(S.timer); location.reload(); }
+function logout() { saved.clear(); S.key = null; S.user = ''; clearInterval(S.timer); location.reload(); }
 
 /* ================= TABS ================= */
 /* Four panes: Home (placeholder for now), Outreach, the Buyers view, and the Spintax generator in an iframe. The iframe loads the first time its tab opens. */
@@ -2550,7 +2557,7 @@ function showTab(name) {
 /* The password goes only to our own iframe, only on our own origin, and only on request or on load. */
 function sendKeyToSpintax() {
   const f = $('spintaxFrame');
-  if (S.mode === 'live' && S.key && f && f.contentWindow) f.contentWindow.postMessage({ type: 'spintax-key', key: S.key }, location.origin);
+  if (S.mode === 'live' && S.key && f && f.contentWindow) f.contentWindow.postMessage({ type: 'spintax-key', key: S.key, user: S.user || '' }, location.origin);
 }
 window.addEventListener('message', e => {
   const f = $('spintaxFrame');
