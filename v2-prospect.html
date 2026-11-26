@@ -23,7 +23,7 @@ Server routes this page expects (see DASHBOARD_API_BRIEF_v5.md)
   GET   /dashboard/ping
   GET   /dashboard/daily?from&to
   GET   /dashboard/replies?from&to&split=1      rows include wasLead and buyerSlot (S1, S2, S3 or null = BD)
-  PATCH /dashboard/contacts/:hubspotId/status   {"status": "interested" | ... | "prospect", "reconnectAt": "YYYY-MM-DD" (with not_now)}
+  PATCH /dashboard/contacts/:hubspotId/status   {"status": "interested" | ... | "no_action_needed" | "prospect", "reconnectAt": "YYYY-MM-DD" (with not_now)}
   POST  /dashboard/contacts/:hubspotId/followups {"dueAt": "YYYY-MM-DD"}
   GET   /dashboard/pipeline
   GET   /dashboard/prospects?include=all
@@ -60,7 +60,7 @@ Spintax tab
   --orange:#E8501F; --orange-soft:rgba(232,80,31,.10); --orange-line:rgba(232,80,31,.5);
   --teal-ink:#0B5FA5; --ins:#0281FF; --ins-dark:#02315F; --sf:#7C3AED; --sf-soft:#EDE9FE; --shadow:0 0 0 1px #e4e4e8, 0 1px 2px rgba(20,20,25,.05);
   --g-ora:linear-gradient(to top,#F97400,#FFC089); --g-sil:linear-gradient(to top,#8E8E8E,#C4C4C4); --g-teal:linear-gradient(to top,#00BED6,#89F1FF);
-  --toast:#1f1f23;
+  --toast:#1f1f23; --nan:#8A7B6B;
   --danger:#c0392b; --radius:8px; --radius-lg:12px;
   --font:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
   /* legacy names */
@@ -71,7 +71,7 @@ Spintax tab
   --bg:#161618; --surface:#212124; --surface2:#1b1b1e; --text:#ededef; --text2:#b4b4bb; --text3:#8b8b93;
   --line:#2b2b30; --line2:#3a3a40; --hover:#2b2b30;
   --orange:#FF6633; --orange-soft:rgba(255,102,51,.14); --orange-line:rgba(255,102,51,.55);
-  --teal-ink:#89F1FF; --ins:#5AA8FF; --ins-dark:#02315F; --sf:#A78BFA; --sf-soft:rgba(167,139,250,.18); --shadow:0 0 0 1px #313136; --toast:#2f2f35; --danger:#ff7b6b;
+  --teal-ink:#89F1FF; --ins:#5AA8FF; --ins-dark:#02315F; --sf:#A78BFA; --sf-soft:rgba(167,139,250,.18); --shadow:0 0 0 1px #313136; --toast:#2f2f35; --danger:#ff7b6b; --nan:#BCAE9C;
   color-scheme:dark;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -358,6 +358,7 @@ th{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--text
 .p-later{background:var(--orange-soft);color:var(--orange)}
 .p-un,.p-src{background:var(--line);color:var(--text2)}
 .p-lost{background:rgba(184,64,26,.2);color:var(--orange)}
+.p-none{background:transparent;color:var(--nan);box-shadow:inset 0 0 0 1px var(--nan)}
 .chat{display:inline-flex;align-items:center;justify-content:center;width:24px;height:18px;border:1px solid var(--teal-ink);border-radius:4px;background:transparent;color:var(--teal-ink);text-decoration:none;flex:none}
 .chat:hover{background:rgba(0,190,214,.14)}
 .chat{cursor:pointer}
@@ -368,6 +369,7 @@ th{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--text
 .lt.ins,.lt.ins svg{color:var(--ins)}
 .chat-off{display:inline-flex;align-items:center;justify-content:center;width:24px;height:18px;border:1px dashed var(--line2);border-radius:4px;background:transparent;color:var(--text3);flex:none;cursor:default}
 select.int{color:var(--orange);border-color:var(--orange-line)}
+select.nan{color:var(--nan);border-color:var(--nan);border-style:dashed}
 :root[data-theme="dark"] .tag.warn,:root[data-theme="dark"] .bv-flag{border-color:var(--orange-line);color:var(--orange)}
 
 /* Home tab (mockup styles). Flat look only while Home is active: class "flat" on #app. */
@@ -804,13 +806,15 @@ const CONFIG = {
   autoRefreshMinutes: 5
 };
 
-/* Outreach Contact Status. group: open (lead to work), converted (became a prospect), out (qualified out).
+/* Outreach Contact Status. group: open (lead to work), converted (became a prospect), out (qualified out),
+   noaction (No Action Needed: still a lead, needs no reply, hidden from the default Leads view).
    The label here is only a first guess: GET /dashboard/options supplies HubSpot's own labels, and the Leads dropdown
    offers whatever the server marks selectable. */
 const STATUS = {
   unlabeled:       { label: 'Unlabeled',        group: 'open',      pill: 'p-un' },
   interested:      { label: 'Interested',       group: 'open',      pill: 'p-open' },
   not_now:         { label: 'Reconnect later',  group: 'open',      pill: 'p-later' },
+  no_action_needed:{ label: 'No Action Needed', group: 'noaction',  pill: 'p-none' },
   went_cold:       { label: 'Went cold',        group: 'out',       pill: 'p-lost' },
   not_a_fit:       { label: 'Not a fit',        group: 'out',       pill: 'p-lost' },
   wrong_contact:   { label: 'Wrong contact',    group: 'out',       pill: 'p-lost' },
@@ -823,7 +827,7 @@ const STATUS = {
   past_engagement: { label: 'Past engagement',  group: 'out',       pill: 'p-un' }
 };
 const UNLABELED_RAW = ['', 'no_reply', 'in_sequence', 'replied_unclassified', 'never-contacted'];
-const TALLY_ORDER = ['interested','not_now','unlabeled','prospect','client','previous_prospect','went_cold','not_a_fit','wrong_contact','not_interested','opted_out','ooo'];
+const TALLY_ORDER = ['interested','not_now','unlabeled','no_action_needed','prospect','client','previous_prospect','went_cold','not_a_fit','wrong_contact','not_interested','opted_out','ooo'];
 const TALLY_ALWAYS = ['interested','not_now','unlabeled','wrong_contact','not_interested','ooo'];
 const SOURCE = { outbound_email: 'Outbound: email', outbound_linkedin: 'Outbound: LinkedIn', outbound_cold_call: 'Outbound: cold call',
   inbound_website: 'Inbound: website', inbound_referral: 'Inbound: referral', event: 'Event', other: 'Other' };
@@ -1105,6 +1109,10 @@ const DEMO = (() => {
     replies.push(demoRow(hid, name, company, seqs[k % seqs.length], buyerBack - 6, 'email', 'interested', true, null));          /* the BD reply, later */
     replies.push(demoRow(hid, name, company, bs, buyerBack, k % 2 ? 'linkedin' : 'email', 'interested', true, bs.slot));   /* the buyer reply came first */
   });
+  /* A few BD leads set to No Action Needed (added last so the rows above are unchanged). */
+  [['Aldo Brandt', 'Brandt Tooling'], ['Freya Moss', 'Moss Logistics'], ['Kenji Ota', 'Ota Precision']].forEach(([name, company], k) => {
+    replies.push(demoRow(String(id++), name, company, seqs[k % seqs.length], 3 + k * 5, k === 1 ? 'linkedin' : 'email', 'no_action_needed', true, null));
+  });
   /* demo only: most replies have a saved conversation, some do not (so the grey icon shows) */
   replies.forEach(r => { if (!r.ooo && Number(r.hubspotId) % 4 !== 0) r.threadId = 'mth_demo' + r.hubspotId + (r.buyerSlot || ''); });
   /* demo only: every third email reply with a conversation is an Instantly one (blue icon, Instantly link) */
@@ -1138,7 +1146,7 @@ const DEMO = (() => {
       const wasLater = r.status === 'not_now';
       r.status = status; if (STATUS[status].group !== 'out') r.wasLead = true; mirror(r);
       if (status === 'not_now') r.nextTask = { id: 'lt' + Date.now(), dueAt: new Date((reconnectAt || ymd(addDays(new Date(), 60))) + 'T16:00:00').toISOString(), subject: 'Reconnect' };
-      else if (STATUS[status].group !== 'open' || wasLater) r.nextTask = null; /* auto-close BD queue tasks */
+      else if ((STATUS[status].group !== 'open' && status !== 'no_action_needed') || wasLater) r.nextTask = null; /* auto-close BD queue tasks; No Action Needed has no side effects */
       if (status === 'prospect' && !deals.some(d => d.contact.hubspotId === hid && stages.find(s => s.id === d.stageId).kind === 'open')) {
         const d = makeDeal(r, '39985460'); d.createdAt = new Date().toISOString(); d.stageEnteredAt = d.createdAt; d.nextTask = null;
         return { ok: true, status, dealId: d.dealId };
@@ -1149,7 +1157,7 @@ const DEMO = (() => {
     unlabel: (hid, expected) => {
       const r = find(hid);
       if (!r) return { status: 404, body: { error: 'not_found', message: 'No HubSpot contact with that ID.' } };
-      if (!['interested', 'not_now', 'not_a_fit', 'not_interested', 'went_cold', 'wrong_contact'].includes(expected)) return { status: 422, body: { error: 'not_undoable', message: 'Only the six labels can be undone here.' } };
+      if (!['interested', 'not_now', 'not_a_fit', 'not_interested', 'went_cold', 'wrong_contact', 'no_action_needed'].includes(expected)) return { status: 422, body: { error: 'not_undoable', message: 'Only the seven labels can be undone here.' } };
       if (r.status !== expected) return { status: 409, body: { error: 'stale', current: r.status } };
       if (deals.some(d => d.contact.hubspotId === hid)) return { status: 422, body: { error: 'has_deal', message: 'This contact has a deal in the BD pipeline, so the label cannot be undone here.' } };
       const hadTask = expected === 'not_now' && !!r.nextTask;
@@ -1157,7 +1165,7 @@ const DEMO = (() => {
       const tail = hid.slice(-1);
       return { status: 200, body: { ok: true, contactId: hid, status: 'replied_unclassified', previous: expected,
         company: { status: 'replied_status_unclear', blockLifted: tail !== '7' && ['interested', 'not_now', 'not_interested', 'not_a_fit', 'went_cold'].includes(expected),
-          stillBlockedReason: tail === '7' ? { interested: 'active_conversation', not_now: 'not_now', not_interested: 'not_interested', not_a_fit: 'not_a_fit', went_cold: 'not_now', wrong_contact: 'active_conversation' }[expected] : tail === '3' ? 'recently_contacted' : null },
+          stillBlockedReason: expected === 'no_action_needed' ? null : tail === '7' ? { interested: 'active_conversation', not_now: 'not_now', not_interested: 'not_interested', not_a_fit: 'not_a_fit', went_cold: 'not_now', wrong_contact: 'active_conversation' }[expected] : tail === '3' ? 'recently_contacted' : null },
         tasks: { reconnectClosed: hadTask ? 1 : 0, closedByLabel: ['not_interested', 'not_a_fit', 'went_cold', 'wrong_contact'].includes(expected) && tail === '5' ? 2 : 0 } } };
     },
     leadFollowup: (hid, dueAt) => { const r = find(hid); r.nextTask = { id: 'lt' + Date.now(), dueAt: new Date(dueAt + 'T16:00:00').toISOString(), subject: 'Follow up' }; return r.nextTask; },
@@ -1222,7 +1230,7 @@ const AP_DEMO_MSG = {
 const BAR_PX = 120, MAX_DOTS = 8;
 const LABEL_COLOR = { interested: '#00BED6', not_now: '#89F1FF', unlabeled: '#F97400', ooo: '#B2B2B2', not_interested: '#474747', not_a_fit: '#C4C4C4',
   wrong_contact: '#8E8E8E', prospect: '#E8501F', client: '#00BED6', previous_prospect: '#767C87', went_cold: '#A3A9B3', opted_out: '#3A3F47',
-  proposal_sent: '#FF8A5C', past_engagement: '#89F1FF' };
+  proposal_sent: '#FF8A5C', past_engagement: '#89F1FF', no_action_needed: 'var(--nan)' };
 function selectDay(date) { S.selectedDay = date; drawChart(); drawDay(); }
 function visitsByDay() {
   const out = Object.fromEntries(S.daily.map(d => [d.date, { emailDirect: 0, social: 0, searchAi: 0, other: 0 }]));
@@ -1519,9 +1527,11 @@ $('apPick').addEventListener('click', e => {
 });
 
 /* ================= LEADS GENERATED ================= */
-const LEAD_PRESETS = [['all', 'All'], ['open', 'Open'], ['converted', 'Became prospects'], ['out', 'Qualified out']];
-const LEAD_ORDER = ['unlabeled', 'interested', 'not_now', 'prospect', 'client', 'previous_prospect', 'proposal_sent', 'went_cold', 'not_a_fit', 'wrong_contact', 'not_interested', 'opted_out', 'past_engagement'];
+const LEAD_PRESETS = [['all', 'All'], ['open', 'Open'], ['converted', 'Became prospects'], ['out', 'Qualified out'], ['noaction', 'No action needed']];
+const LEAD_ORDER = ['unlabeled', 'interested', 'not_now', 'no_action_needed', 'prospect', 'client', 'previous_prospect', 'proposal_sent', 'went_cold', 'not_a_fit', 'wrong_contact', 'not_interested', 'opted_out', 'past_engagement'];
 const presetStatuses = p => LEAD_ORDER.filter(k => p === 'all' || STATUS[k].group === p);
+/* The default Leads view: everything except No Action Needed. The "All" preset still shows them. */
+const defaultLeadSel = () => new Set(presetStatuses('all').filter(k => k !== 'no_action_needed'));
 function leadFollowCell(r) {
   if (groupOf(r) !== 'open' || !r.hubspotId) return '';
   const id = esc(r.hubspotId);
@@ -1544,8 +1554,8 @@ function stageEntered(d) {
   return null;
 }
 function hasBdDeal(r) { return r.hasDeal === true || S.deals.some(d => d.contact && String(d.contact.hubspotId) === String(r.hubspotId)); }
-/* The six labels a person can set from the Leads table; only these can be set back to Unlabeled (the server enforces it). */
-const UNDOABLE = ['interested', 'not_now', 'not_a_fit', 'not_interested', 'went_cold', 'wrong_contact'];
+/* The seven labels a person can set from the Leads table; only these can be set back to Unlabeled (the server enforces it). */
+const UNDOABLE = ['interested', 'not_now', 'not_a_fit', 'not_interested', 'went_cold', 'wrong_contact', 'no_action_needed'];
 const CLOSING = ['not_a_fit', 'not_interested', 'went_cold', 'wrong_contact'];   /* these also close open [BD] tasks */
 const rowsOf = id => [...S.tableReplies, ...S.chartReplies].filter(r => r.hubspotId === id);
 const hsContactUrl = id => `https://app.hubspot.com/contacts/${CONFIG.hubspotPortalId}/record/0-1/${encodeURIComponent(id)}`;
@@ -1611,6 +1621,7 @@ function ulOpen(id) {
   if (k === 'interested') lines.push('Interested also blocked ' + company + ' from outreach. That block will be lifted.');
   else if (k === 'not_interested' || k === 'not_a_fit') lines.push('This label blocked ' + company + ' for a year. That block will be lifted.');
   else if (k === 'not_now' || k === 'went_cold') lines.push('This label paused ' + company + '. That pause will be lifted.');
+  else if (k === 'no_action_needed') lines.push('No Action Needed changed nothing else, so nothing else changes.');
   if (CLOSING.includes(k)) lines.push('Tasks it closed stay closed.');
   $('ulText').textContent = lines.join(' ');
   $('ulGo').disabled = false;
@@ -1635,9 +1646,9 @@ function statusCell(r) {
   const opts = (S.contactOpts || []).filter(o => o.selectable && o.value !== 'prospect');
   const head = opts.some(o => o.value === k) ? '' : `<option value="" selected disabled>${st.label}</option>`;
   const off = S.contactOpts ? '' : ' disabled title="Status options could not be loaded from HubSpot. Press Refresh."';
-  /* One of the six labels and no BD deal: the first option undoes the label (the server refuses anything else). */
+  /* One of the seven labels and no BD deal: the first option undoes the label (the server refuses anything else). */
   const undo = UNDOABLE.includes(k) && !hasBdDeal(r) ? '<option value="__unlabel">Unlabeled (undo label)</option><option disabled>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500</option>' : '';
-  return `<select${k === 'interested' ? ' class="int"' : ''} data-id="${esc(r.hubspotId)}" aria-label="Status for ${esc(r.name)}"${off}>${undo}${head}${opts.map(o => `<option value="${esc(o.value)}"${o.value === k ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}<optgroup label="Pipeline"><option value="prospect">Make prospect ›</option></optgroup></select>`;
+  return `<select${k === 'interested' ? ' class="int"' : k === 'no_action_needed' ? ' class="nan"' : ''} data-id="${esc(r.hubspotId)}" aria-label="Status for ${esc(r.name)}"${off}>${undo}${head}${opts.map(o => `<option value="${esc(o.value)}"${o.value === k ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}<optgroup label="Pipeline"><option value="prospect">Make prospect ›</option></optgroup></select>`;
 }
 /* Channel cell of the Leads table: an Instantly email gets a blue icon and a tooltip; the rest are unchanged. */
 function leadChannelCell(r) {
@@ -1695,7 +1706,7 @@ async function lbApply() {
   drawSummary(); drawDay(); drawLeads();
 }
 function drawLeads() {
-  if (!S.leadSel) S.leadSel = new Set(presetStatuses('all'));
+  if (!S.leadSel) S.leadSel = defaultLeadSel();
   const all = leadRows(), counts = {};
   all.forEach(r => { const k = statusKey(r); counts[k] = (counts[k] || 0) + 1; });
   $('leadChips').innerHTML = presetsHtml(LEAD_PRESETS) + LEAD_ORDER.filter(k => counts[k] || S.leadSel.has(k) && ['unlabeled', 'interested', 'not_now', 'prospect'].includes(k))
@@ -2394,7 +2405,7 @@ const DEMO_BV = (() => {
     ['in_process', 'In Process'], ['went_quiet', 'Went Quiet'], ['soft_pass_retry', 'Soft Pass - Retry'], ['passed_do_not_retry', 'Passed - Do Not Retry'], ['exclude', 'Exclude']];
   const FU = [['teaser_sent', 'Teaser Sent'], ['nda', 'NDA'], ['data_room', 'Data Room'], ['eoi_submitted', 'EOI Submitted'], ['management_meeting', 'Management Meeting'], ['loi', 'LOI']];
   const CS = [['interested', 'Interested', 1], ['not_now', 'Reconnect Later', 1], ['prospect', 'Prospect', 1], ['went_cold', 'Went Cold', 1], ['wrong_contact', 'Wrong Contact', 1],
-    ['not_interested', 'Not Interested', 1], ['not_a_fit', 'Not a Fit', 1], ['in_sequence', 'In Sequence', 0], ['no_reply', 'No Reply', 0], ['bounced', 'bounced', 0],
+    ['not_interested', 'Not Interested', 1], ['not_a_fit', 'Not a Fit', 1], ['no_action_needed', 'No Action Needed', 1], ['in_sequence', 'In Sequence', 0], ['no_reply', 'No Reply', 0], ['bounced', 'bounced', 0],
     ['replied_unclassified', 'Replied (unclassified)', 0], ['opted_out', 'Opted Out', 0], ['client', 'Client', 0], ['previous_prospect', 'Previous Prospect', 0]];
   const names = { S1: 'Northline', S2: '', S3: '' };
   const first = ['Jordan', 'Sam', 'Alex', 'Pat', 'Chris', 'Taylor', 'Morgan'], last = ['Lee', 'Rivera', 'Chen', 'Park', 'Kim', 'Reid', 'Ito'];
