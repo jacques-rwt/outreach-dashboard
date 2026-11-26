@@ -60,7 +60,7 @@ Spintax tab
   --orange:#E8501F; --orange-soft:rgba(232,80,31,.10); --orange-line:rgba(232,80,31,.5);
   --teal-ink:#0B5FA5; --ins:#0281FF; --ins-dark:#02315F; --sf:#7C3AED; --sf-soft:#EDE9FE; --shadow:0 0 0 1px #e4e4e8, 0 1px 2px rgba(20,20,25,.05);
   --g-ora:linear-gradient(to top,#F97400,#FFC089); --g-sil:linear-gradient(to top,#8E8E8E,#C4C4C4); --g-teal:linear-gradient(to top,#00BED6,#89F1FF);
-  --toast:#1f1f23; --nan:#8A7B6B;
+  --toast:#1f1f23; --nan:#8A7B6B; --dg-closed:#474747;
   --danger:#c0392b; --radius:8px; --radius-lg:12px;
   --font:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
   /* legacy names */
@@ -71,7 +71,7 @@ Spintax tab
   --bg:#161618; --surface:#212124; --surface2:#1b1b1e; --text:#ededef; --text2:#b4b4bb; --text3:#8b8b93;
   --line:#2b2b30; --line2:#3a3a40; --hover:#2b2b30;
   --orange:#FF6633; --orange-soft:rgba(255,102,51,.14); --orange-line:rgba(255,102,51,.55);
-  --teal-ink:#89F1FF; --ins:#5AA8FF; --ins-dark:#02315F; --sf:#A78BFA; --sf-soft:rgba(167,139,250,.18); --shadow:0 0 0 1px #313136; --toast:#2f2f35; --danger:#ff7b6b; --nan:#BCAE9C;
+  --teal-ink:#89F1FF; --ins:#5AA8FF; --ins-dark:#02315F; --sf:#A78BFA; --sf-soft:rgba(167,139,250,.18); --shadow:0 0 0 1px #313136; --toast:#2f2f35; --danger:#ff7b6b; --nan:#BCAE9C; --dg-closed:#6A6A72;
   color-scheme:dark;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -263,8 +263,9 @@ td select{height:28px;font-size:12px}
 .bv-icon{color:var(--text3)}
 .bv-count{color:var(--orange)}
 .bv-edit input{border:2px solid var(--orange)}
-.ring{flex:none;align-self:center;width:58px;height:58px;border-radius:50%;display:grid;place-items:center}
-.ring>div{width:44px;height:44px;border-radius:50%;background:var(--surface);display:grid;place-items:center;align-content:center;text-align:center;line-height:1.05}
+.ring{flex:none;align-self:center;width:58px;height:58px;border-radius:50%;display:grid;place-items:center;position:relative}
+.ring>svg,.donut>svg{position:absolute;inset:0;width:100%;height:100%;display:block;overflow:visible}
+.ring>div{position:relative;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;align-content:center;text-align:center;line-height:1.05}
 .ring b{font-size:13px;font-weight:500}.ring small{font-size:9px;color:var(--text3)}
 .bv-bar{background:var(--orange-soft);color:var(--orange);border:none}
 .bv-bar .muted{color:var(--orange)}
@@ -329,8 +330,8 @@ td select{height:28px;font-size:12px}
 .xax div{flex:1;display:flex;justify-content:space-between;gap:8px;white-space:nowrap;font-size:11px;color:var(--text3)}
 .stats{display:flex;gap:24px;flex-wrap:wrap}
 .stats .k{font-size:12px;color:var(--text3)}.stats .v{font-size:22px}.stats .s{font-size:11px;color:var(--text3)}
-.donut{flex:none;width:112px;height:112px;border-radius:50%;display:grid;place-items:center}
-.donut>div{width:80px;height:80px;border-radius:50%;background:var(--surface);display:grid;place-items:center;align-content:center;text-align:center;line-height:1.1}
+.donut{flex:none;width:112px;height:112px;border-radius:50%;display:grid;place-items:center;position:relative}
+.donut>div{position:relative;width:80px;height:80px;border-radius:50%;display:grid;place-items:center;align-content:center;text-align:center;line-height:1.1}
 .dl{display:flex;flex-direction:column;gap:3px;font-size:12px;min-width:0;flex:1}
 .dl span{display:flex;align-items:center;gap:6px;white-space:nowrap;color:var(--text2)}
 .dl i{flex:none;width:8px;height:8px;border-radius:50%}
@@ -1264,15 +1265,68 @@ $('scols').addEventListener('click', e => { const b = e.target.closest('.scol');
 $('refl').addEventListener('click', e => { const b = e.target.closest('.rc'); if (b) selectDay(b.dataset.d); });
 
 /* ================= TALLY, RATES, DONUT, DAY CARD ================= */
-/** Paints both reply-label donuts (Outreach and Home) from [labelKey, count] pairs. */
+/* Rings are inline SVG circles drawn with stroke-dasharray, so their edges are anti-aliased.
+   ringSvg: an outer size and hole size in px, an optional full track colour, and arcs of { color, start, len } in px along the
+   middle of the ring, measured clockwise from the top. */
+const ringLen = (size, hole) => Math.PI * (size + hole) / 2;   /* circumference at the middle of the ring: radius (size + hole) / 4 */
+function ringSvg(size, hole, track, arcs) {
+  const w = (size - hole) / 2, r = (size + hole) / 4, c = size / 2, C = 2 * Math.PI * r;
+  const circ = (color, dash) => `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${color}" stroke-width="${w}"${dash || ''}/>`;
+  const body = (track ? circ(track) : '') + arcs.map(a => a.len >= C - 0.01 ? circ(a.color)
+    : circ(a.color, ` stroke-dasharray="${a.len.toFixed(3)} ${C.toFixed(3)}" stroke-dashoffset="${(-a.start).toFixed(3)}"`)).join('');
+  return `<svg viewBox="0 0 ${size} ${size}" aria-hidden="true" focusable="false"><g transform="rotate(-90 ${c} ${c})">${body}</g></svg>`;
+}
+/** The small "% active" ring on the Buyers and Home slot cards: a track in var(--line) and the active share in var(--orange). */
+function activeRing(pct) {
+  const C = ringLen(58, 44);
+  return pct >= 100 ? ringSvg(58, 44, null, [{ color: 'var(--orange)', start: 0, len: C }])
+    : ringSvg(58, 44, 'var(--line)', pct > 0 ? [{ color: 'var(--orange)', start: 0, len: pct / 100 * C }] : []);
+}
+
+/* The reply-label donut draws one slice per group, biggest first. Status keys not listed here count as Closed out.
+   LABEL_COLOR above is unchanged for everything else that reads it. */
+const DONUT_GROUPS = [
+  { name: 'Interested', color: '#00BED6', keys: ['interested', 'client'] },
+  { name: 'Reconnect later', color: '#89F1FF', keys: ['not_now'] },
+  { name: 'Unlabeled', color: '#F97400', keys: ['unlabeled'] },
+  { name: 'Prospect', color: '#E8501F', keys: ['prospect', 'proposal_sent'] },
+  { name: 'No Action Needed', color: 'var(--nan)', keys: ['no_action_needed'] },
+  { name: 'Closed out', color: 'var(--dg-closed)', keys: ['not_interested', 'not_a_fit', 'wrong_contact', 'went_cold', 'opted_out', 'previous_prospect'], rest: true },
+  { name: 'Out of office', color: '#B2B2B2', keys: ['ooo'] }
+];
+const DONUT_SIZE = { donut: [112, 80], donut2: [120, 86] }, DONUT_GAP = 2, DONUT_MIN = 3;   /* px of arc along the middle of the ring */
+/** Slice lengths in px for counts around a ring of length C: a fixed DONUT_GAP after every slice, any slice that would be
+    shorter than DONUT_MIN is drawn at DONUT_MIN, and the bigger slices share what is left in proportion. */
+function donutArcs(vals, C) {
+  const room = C - vals.length * DONUT_GAP, small = new Set();
+  for (;;) {
+    const big = vals.reduce((a, v, i) => small.has(i) ? a : a + v, 0), left = room - small.size * DONUT_MIN;
+    if (!big || left <= 0) return vals.map(() => room / vals.length);
+    const add = vals.map((v, i) => i).filter(i => !small.has(i) && vals[i] / big * left < DONUT_MIN);
+    if (!add.length) return vals.map((v, i) => small.has(i) ? DONUT_MIN : v / big * left);
+    add.forEach(i => small.add(i));
+  }
+}
+/** Paints both reply-label donuts (Outreach and Home) and their legends from [labelKey, count] pairs. */
 function paintDonut(parts) {
-  const tot = parts.reduce((a, p) => a + p[1], 0); let acc = 0;
-  const bg = tot ? 'conic-gradient(' + parts.map(([k, v]) => {
-    const a = acc / tot * 100; acc += v; const b = acc / tot * 100, c = LABEL_COLOR[k] || '#9CA3AF', gap = parts.length > 1 ? .9 : 0;
-    return `${c} ${a.toFixed(2)}% ${(b - gap).toFixed(2)}%, transparent ${(b - gap).toFixed(2)}% ${b.toFixed(2)}%`;
-  }).join(', ') + ')' : 'var(--line)';
-  const list = parts.map(([k, v]) => `<span><i style="background:${LABEL_COLOR[k] || '#9CA3AF'}"></i>${labelOf(k)}<b>${v.toLocaleString()}</b></span>`).join('');
-  [['donut', 'donutN', 'dl'], ['donut2', 'donut2N', 'dl2']].forEach(([d, n, l]) => { $(d).style.background = bg; $(n).textContent = tot.toLocaleString(); $(l).innerHTML = list; });
+  const tot = parts.reduce((a, p) => a + p[1], 0);
+  const groups = DONUT_GROUPS.map(g => ({ ...g, n: 0, items: [] }));
+  parts.forEach(([k, v]) => { const g = groups.find(x => x.keys.includes(k)) || groups.find(x => x.rest); g.n += v; g.items.push([k, v]); });
+  const shown = groups.filter(g => g.n > 0).sort((a, b) => b.n - a.n);   /* sort is stable: ties keep the DONUT_GROUPS order */
+  const tip = g => g.name + ': ' + g.items.map(([k, v]) => `${labelOf(k)} ${v.toLocaleString()}`).join(', ');
+  const list = shown.map(g => `<span title="${esc(tip(g))}"><i style="background:${g.color}"></i>${esc(g.name)}<b>${g.n.toLocaleString()}</b></span>`).join('');
+  const aria = `${tot.toLocaleString()} ${tot === 1 ? 'reply' : 'replies'}` + (shown.length ? ': ' + shown.map(g => `${g.name} ${g.n.toLocaleString()}`).join(', ') : '');
+  [['donut', 'donutN', 'dl'], ['donut2', 'donut2N', 'dl2']].forEach(([d, n, l]) => {
+    const [size, hole] = DONUT_SIZE[d], C = ringLen(size, hole);
+    let svg;
+    if (!shown.length) svg = ringSvg(size, hole, 'var(--line)', []);
+    else if (shown.length === 1) svg = ringSvg(size, hole, null, [{ color: shown[0].color, start: 0, len: C }]);
+    else { let at = DONUT_GAP / 2; svg = ringSvg(size, hole, null, donutArcs(shown.map(g => g.n), C).map((len, i) => { const a = { color: shown[i].color, start: at, len }; at += len + DONUT_GAP; return a; })); }
+    const el = $(d), old = el.querySelector(':scope>svg');
+    if (old) old.remove();
+    el.insertAdjacentHTML('afterbegin', svg); el.setAttribute('aria-label', 'Reply labels, ' + aria);
+    $(n).textContent = tot.toLocaleString(); $(l).innerHTML = list;
+  });
   $('hLabN').textContent = tot.toLocaleString() + (tot === 1 ? ' reply' : ' replies');
 }
 function drawSummary() {
@@ -2013,7 +2067,7 @@ function bvDrawCards() {
         <span style="display:flex;align-items:center;gap:6px"><span class="muted">${total}</span>
         <button class="bv-icon" data-act="name-edit" data-slot="${c}" aria-label="Rename the ${c} mandate" title="Rename the ${c} mandate">${BV_PENCIL}</button></span></div>
       ${body}</div>
-      <div class="ring" role="img" aria-label="${sm ? pct + ' percent active' : 'Not loaded yet'}" style="background:conic-gradient(from -90deg,var(--orange) 0 ${pct}%,var(--line) ${pct}% 100%)"><div><b>${sm && sm.total ? pct + '%' : '\u2013'}</b><small>active</small></div></div></div>`;
+      <div class="ring" role="img" aria-label="${sm ? pct + ' percent active' : 'Not loaded yet'}">${activeRing(pct)}<div><b>${sm && sm.total ? pct + '%' : '\u2013'}</b><small>active</small></div></div></div>`;
   }).join('');
   drawHomeMandates();
 }
@@ -2564,7 +2618,7 @@ function drawHomeMandates() {
     return `<button type="button" class="hmc" data-slot="${c}" aria-label="Open ${c} in Buyers"><div class="mid">
       <div class="t"><i class="mdot" style="background:${BV_SLOT_DOT[ci % BV_SLOT_DOT.length]}"></i><span class="code">${c}</span><span class="nmm">${name ? esc(name) : '<span class="muted" style="font-weight:400">No mandate name yet</span>'}</span><div class="grow"></div><span class="muted">${sm ? sm.active + ' active of ' + sm.total : ''}</span></div>
       <div class="sum">${sum}</div></div>
-      <div class="ring" style="background:conic-gradient(from -90deg,var(--orange) 0 ${pct}%,var(--line) ${pct}% 100%)"><div><b>${sm && sm.total ? pct + '%' : '–'}</b><small>active</small></div></div></button>`;
+      <div class="ring">${activeRing(pct)}<div><b>${sm && sm.total ? pct + '%' : '–'}</b><small>active</small></div></div></button>`;
   }).join('');
 }
 function drawHomePros() {
