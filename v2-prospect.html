@@ -653,7 +653,7 @@ select.nan{color:var(--nan);border-color:var(--nan);border-style:dashed}
         </div>
         <div class="or">
           <div class="stats">
-            <div><div class="k">Sent</div><div class="v" id="st1">0</div><div class="s" id="st1s"></div></div>
+            <div><div class="k">Sent, incl. connection requests</div><div class="v" id="st1">0</div><div class="s" id="st1s"></div></div>
             <div><div class="k">People replied</div><div class="v hot" id="st2">0.0%</div><div class="s" id="st2s"></div></div>
           </div>
           <div class="row" style="flex-wrap:nowrap">
@@ -2865,14 +2865,15 @@ async function rxLoad() {
   if (!RX.panels.length) return;
   const { from, to } = rangeFor($('range').value);
   RX.panels.forEach(p => { p.err = ''; if (!p.data) p.draw(); });
-  try { const d = await rxFetch(from, to); RX.panels.forEach(p => { p.data = d; p.draw(); }); }
+  try { const d = await rxFetch(from, to); RX.panels.forEach(p => { p.data = d; p.draw(); });
+    const hit = d.contacted.filter(r => r.replied).length; RX.stat = [rxPct(hit, d.contacted.length), `${hit} of ${d.contacted.length} contacted`]; rxApplyStat(); }
   catch (e) { RX.panels.forEach(p => { p.data = null; p.err = e.message; p.draw(); }); }
 }
 function rxApplyStat() { const a = $('st2'), b = $('st2s'); if (!a) return; a.textContent = RX.stat ? RX.stat[0] : '...'; b.textContent = RX.stat ? RX.stat[1] : ''; }
 function rxBuyerSync() { const p = RX.panels.find(x => x.cfg.mode === 'buyers'); if (!p) return; if (BV.slot && p.camp !== BV.slot && bvCodes().includes(BV.slot)) p.camp = BV.slot; p.shell = null; p.draw(); }
 function rxInit() {
   rxMake($('rxHome'), { title: 'Who we contacted, and who replied', mode: 'all', camps: [], defCamp: 'all' });
-  rxMake($('rxOutreach'), { title: 'Who we contacted, and who replied', mode: 'all', camps: [], defCamp: 'bd', onStat: (r, s) => { RX.stat = [r, s]; rxApplyStat(); } });
+  rxMake($('rxOutreach'), { title: 'Who we contacted, and who replied', mode: 'all', camps: [], defCamp: 'bd' });
   rxMake($('rxBuyers'), { title: 'Buyer campaigns: who we contacted, and who replied', mode: 'buyers', camps: [], defCamp: 'all' });
 }
 
