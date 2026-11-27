@@ -2788,7 +2788,7 @@ function rxDemo(from, to) {
       const sent = steps.filter(d => !rep || d <= rep.when), inW = sent.filter(d => d >= f && d <= t).length;
       const name = fn[Math.floor(rnd() * 12)] + ' ' + ln[Math.floor(rnd() * 12)];
       if (sent.length >= 3 && sent[2] >= f && sent[2] <= t) out.connectionRequestsSent[buyer ? 'buyer' : 'bd']++;
-      const base = { kind: buyer ? 'buyer' : 'bd', buyerSlot: slot, name, email: name.toLowerCase().replace(' ', '.') + '@example.com', company: co, companyId: 'c' + ci, stepsInWindow: inW,
+      const base = { kind: buyer ? 'buyer' : 'bd', buyerSlot: slot, name, email: name.toLowerCase().replace(' ', '.') + '@example.com', company: co, companyId: 'c' + ci, stepsInWindow: inW, instantlySteps: (ci % 4 === 0 || buyer) ? inW : 0,
         replied: !!(rep && rep.when >= f && rep.when <= t), repliedAt: rep ? new Date(rep.when).toISOString() : null, replyChannel: 'email', replyStep: rep ? rep.step : null, ooo: !!(rep && rep.ooo) };
       if (inW > 0) out.contacted.push({ ...base, group: 'contacted' });
       else if (base.replied) out.late.push({ ...base, group: 'late', lastStepAt: new Date(sent[sent.length - 1]).toISOString() });
@@ -2830,7 +2830,7 @@ function rxMake(host, cfg) {
     const body = host.querySelector('.rxBody');
     if (P.err) { body.innerHTML = `<div class="muted" style="padding:10px 0">${esc(P.err)}</div>`; return; }
     if (!P.data) { body.innerHTML = '<div class="muted" style="padding:10px 0">Loading...</div>'; return; }
-    const c = P.compute(), rep = c.rows.filter(r => r.hit).length, coRep = c.cos.filter(x => x.replied > 0).length, steps = c.rows.reduce((s, r) => s + r.stepsInWindow, 0);
+    const c = P.compute(), rep = c.rows.filter(r => r.hit).length, coRep = c.cos.filter(x => x.replied > 0).length, steps = c.rows.reduce((s, r) => s + r.stepsInWindow, 0), instSteps = c.rows.reduce((s, r) => s + (r.instantlySteps || 0), 0), instPeople = c.rows.filter(r => r.instantlySteps > 0).length;
     if (cfg.onStat) cfg.onStat(rxPct(rep, c.rows.length), `${rep} of ${c.rows.length} contacted`);
     host.querySelector('.rxRange').textContent = P.data.range.from + ' to ' + P.data.range.to;
     const k = P.sort[0], dir = P.sort[1], list = c.cos.slice().sort((a, b) => typeof a[k] === 'string' ? dir * a[k].localeCompare(b[k]) : dir * (a[k] - b[k]));
@@ -2843,12 +2843,17 @@ function rxMake(host, cfg) {
         return h; }).join('') : '<tr><td colspan="5" class="muted" style="padding:14px 8px">Nobody was contacted in this window.</td></tr>') + '</tbody></table>';
     const late = c.late.slice().sort((a, b) => String(b.repliedAt).localeCompare(String(a.repliedAt)));
     const lateH = late.length ? '<table><thead><tr><th>Contact</th><th>Company</th><th>Last step sent</th><th>Replied</th><th>Type</th></tr></thead><tbody>' + late.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.company)}</td><td>${rxDay(r.lastStepAt) || '-'}</td><td>${rxDay(r.repliedAt)}</td><td>${rxPill(r.ooo)}</td></tr>`).join('') + '</tbody></table><div class="muted rx-note">Replied inside the window, but we sent them nothing in it, so they are not in the reply rate.</div>' : '<div class="muted rx-note">No replies from earlier outreach in this window.</div>';
+    const sc0 = body.querySelector('.hscroll'), top0 = sc0 ? sc0.scrollTop : 0;
+    body.style.minHeight = body.offsetHeight + 'px';
     body.innerHTML = '<div class="rx-cards">' +
       `<div class="rx-card">${rxRing(rep, c.rows.length)}<div class="k">People</div><div class="l">Contacted<b>${c.rows.length}</b></div><div class="l">Replied<b>${rep}</b></div><div class="r">${rxPct(rep, c.rows.length)} reply rate</div></div>` +
       `<div class="rx-card">${rxRing(coRep, c.cos.length)}<div class="k">Companies</div><div class="l">Contacted<b>${c.cos.length}</b></div><div class="l">Replied<b>${coRep}</b></div><div class="r">${rxPct(coRep, c.cos.length)} reply rate</div></div>` +
       `<div class="rx-card"><div class="k">Steps sent</div><div class="l"><b style="margin-left:0">${steps.toLocaleString()}</b></div><div class="sub">emails, LinkedIn messages and InMails</div><div class="l" style="margin-top:10px">Connection requests<b style="font-size:18px">${c.conn}</b></div><div class="sub">tallied only, not counted as contacted</div></div></div>` +
+      `<div class="muted" style="margin:-6px 0 12px;font-size:12px">Steps by source: Instantly ${instSteps.toLocaleString()} (${instPeople} people), Salesforge ${(steps - instSteps).toLocaleString()}</div>` +
       `<div class="rx-tabs"><button class="tMain${P.tab === 'main' ? ' on' : ''}">Contacted in this window</button><button class="tLate${P.tab === 'late' ? ' on' : ''}">Replies from earlier outreach (${late.length})</button></div>` +
       `<div class="hscroll"><div class="rxMain" style="display:${P.tab === 'main' ? 'block' : 'none'}">${main}</div><div class="rxLate" style="display:${P.tab === 'late' ? 'block' : 'none'}">${lateH}</div></div>`;
+    const sc1 = body.querySelector('.hscroll'); if (sc1) sc1.scrollTop = top0;
+    body.style.minHeight = '';
     body.querySelector('.tMain').onclick = () => { P.tab = 'main'; P.draw(); };
     body.querySelector('.tLate').onclick = () => { P.tab = 'late'; P.draw(); };
     body.querySelectorAll('.rxMain th[data-k]').forEach(th => th.onclick = () => { const key = th.dataset.k; P.sort = [key, P.sort[0] === key ? -P.sort[1] : (key === 'name' ? 1 : -1)]; P.draw(); });
